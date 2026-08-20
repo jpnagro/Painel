@@ -1,0 +1,39 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # Passo 1: Construir a imagem do Docker e armazená-la no Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-east1-docker.pkg.dev/${_PROJECT}/${_REPO}/${_APP}-${_ENV}:latest', '.']
+
+  # Passo 2: Enviar a imagem para o Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-east1-docker.pkg.dev/${_PROJECT}/${_REPO}/${_APP}-${_ENV}:latest']
+
+  # Passo 3: Implantar a imagem no Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_APP}-${_ENV}' # Nome do serviço
+      - '--image'
+      - 'us-east1-docker.pkg.dev/${_PROJECT}/${_REPO}/${_APP}-${_ENV}:latest'
+      - '--region'
+      - 'us-east1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'DOPPLER_PROJECT=ng-customer-monitoring,DOPPLER_CONFIG=${_DOPPLER_ENV}'
+      - '--set-secrets'
+      - 'DOPPLER_TOKEN=customer-monitoring-DOPPLER:latest'
+      - '--network'
+      - '${_NETWORK}'
+      - '--subnet'
+      - '${_SUBNET}'
+      - '--vpc-egress'
+      - 'all-traffic'
+
+# Configuração de timeout
+timeout: '1600s'
