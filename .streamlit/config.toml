@@ -1,0 +1,5 @@
+[theme]
+# Azul da marca Nagro (extraído do logo_azul.png) -- substitui o laranja
+# padrão do Streamlit em botões primários (ex.: "🔍 Filtrar"), sliders,
+# checkboxes/radios/multiselects selecionados, links, etc.
+primaryColor = "#1665AF"

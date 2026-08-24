@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 from crud.carteira.charts import (
@@ -12,6 +13,7 @@ from crud.carteira.charts import (
 )
 from crud.carteira.data import SEM_CLIENT_DATA, carregar_dados, get_engine, ops_raiz_por_operation_type
 from crud.carteira.indicators import calcular_indicadores
+from core.ui import colunas_compactas
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -25,7 +27,10 @@ def load_dados_brutos():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_indicadores(produtos=("CCB", "CPR"), subfiltro_ccb=None, subfiltro_cpr=None, portfolios=None):
+def load_indicadores(
+    produtos=("CCB", "CPR"), subfiltro_ccb=None, subfiltro_cpr=None, portfolios=None,
+    data_inicio=None, data_fim=None,
+):
     """Calcula os indicadores a partir da base já em memória (cache de
     `load_dados_brutos`). Cada combinação de filtros tem sua própria
     entrada de cache, então a primeira vez que se seleciona uma combinação
@@ -35,6 +40,7 @@ def load_indicadores(produtos=("CCB", "CPR"), subfiltro_ccb=None, subfiltro_cpr=
     return calcular_indicadores(
         ccb, cpr, inst_ccb, inst_cpr, client,
         produtos=produtos, subfiltro_ccb=subfiltro_ccb, subfiltro_cpr=subfiltro_cpr, portfolios=portfolios,
+        data_inicio=data_inicio, data_fim=data_fim,
     )
 
 
@@ -58,66 +64,101 @@ def render_carteira():
         "indicadores principais e analisados separadamente no book de renegociações."
     )
 
-    ccb_bruto, cpr_bruto, inst_ccb_bruto, inst_cpr_bruto, client_bruto = load_dados_brutos()
-
-    portfolios_disponiveis = sorted(
-        set(inst_ccb_bruto["portfolio"].dropna().unique())
-        | set(inst_cpr_bruto["portfolio"].dropna().unique())
-    )
-    portfolios_selecionados = st.multiselect(
-        "Portfolio",
-        options=portfolios_disponiveis,
-        default=portfolios_disponiveis,
-        key="cart_filtro_portfolio",
-        help="Fundo/veículo que detém o recebível (installments.portfolio / "
-        "installments_cpr.portfolio). Desmarcar todos mostra carteira vazia.",
-    )
-
-    produtos_selecionados = st.multiselect(
-        "Produto",
-        options=["CCB", "CPR"],
-        default=["CCB", "CPR"],
-        key="cart_filtro_produto",
-        help="Selecione os dois para ver a carteira consolidada, ou apenas um pra restringir.",
-    )
-
-    subfiltro_ccb = None
-    if "CCB" in produtos_selecionados:
-        # SEM_CLIENT_DATA só aparece como opção se hoje existir de fato
-        # ao menos uma raiz CCB sem linha correspondente em client_data —
-        # sem essa checagem, ela ficaria poluindo o filtro pra sempre,
-        # mesmo depois de a base de client_data ser completada.
-        tipos_ccb = ["App", "Crédito Produtor"]
-        tem_sem_client_data = len(ops_raiz_por_operation_type(ccb_bruto, client_bruto, SEM_CLIENT_DATA)) > 0
-        if tem_sem_client_data:
-            tipos_ccb.append(SEM_CLIENT_DATA)
-        subfiltro_ccb = st.multiselect(
-            "Tipo de operação (CCB)",
-            options=tipos_ccb,
-            default=tipos_ccb,
-            key="cart_subfiltro_ccb",
-            help=(
-                f"'{SEM_CLIENT_DATA}' = contratos sem registro correspondente em client_data."
-                if tem_sem_client_data else None
-            ),
-        )
-
-    subfiltro_cpr = None
-    if "CPR" in produtos_selecionados:
-        tipos_cpr = sorted(cpr_bruto["productType"].dropna().unique().tolist())
-        subfiltro_cpr = st.multiselect(
-            "Tipo de produto (CPR)",
-            options=tipos_cpr,
-            default=tipos_cpr,
-            key="cart_subfiltro_cpr",
-        )
-
     col_refresh, col_info = st.columns([1, 3])
     with col_refresh:
         refresh = st.button("🔄 Recarregar dados", key="cart_refresh")
     if refresh:
         load_dados_brutos.clear()
         load_indicadores.clear()
+
+    ccb_bruto, cpr_bruto, inst_ccb_bruto, inst_cpr_bruto, client_bruto = load_dados_brutos()
+
+    # Filtros dentro de um `st.form`: as mudanças só são aplicadas (e a aba
+    # só recalcula/re-renderiza a partir daqui) quando "🔍 Filtrar" é
+    # clicado -- evita recarregar tudo a cada seleção individual.
+    with st.form("cart_filtros_form"):
+        portfolios_disponiveis = sorted(
+            set(inst_ccb_bruto["portfolio"].dropna().unique())
+            | set(inst_cpr_bruto["portfolio"].dropna().unique())
+        )
+        portfolios_selecionados = st.multiselect(
+            "Portfolio",
+            options=portfolios_disponiveis,
+            default=portfolios_disponiveis,
+            key="cart_filtro_portfolio",
+            help="Fundo/veículo que detém o recebível (installments.portfolio / "
+            "installments_cpr.portfolio). Desmarcar todos mostra carteira vazia.",
+        )
+
+        # Lê a seleção corrente de "Produto" antes de montar a linha, pra
+        # decidir quais subfiltros (CCB/CPR) ficam ativos e evitar lacuna
+        # vazia quando um dos dois não está selecionado.
+        produtos_atual = st.session_state.get("cart_filtro_produto", ["CCB", "CPR"])
+        col_produto, col_ccb, col_cpr = colunas_compactas(
+            [True, "CCB" in produtos_atual, "CPR" in produtos_atual]
+        )
+
+        with col_produto:
+            produtos_selecionados = st.multiselect(
+                "Produto",
+                options=["CCB", "CPR"],
+                default=["CCB", "CPR"],
+                key="cart_filtro_produto",
+                help="Selecione os dois para ver a carteira consolidada, ou apenas um pra restringir.",
+            )
+
+        subfiltro_ccb = None
+        if col_ccb is not None:
+            with col_ccb:
+                # SEM_CLIENT_DATA só aparece como opção se hoje existir de fato
+                # ao menos uma raiz CCB sem linha correspondente em client_data —
+                # sem essa checagem, ela ficaria poluindo o filtro pra sempre,
+                # mesmo depois de a base de client_data ser completada.
+                tipos_ccb = ["App", "Crédito Produtor"]
+                tem_sem_client_data = len(ops_raiz_por_operation_type(ccb_bruto, client_bruto, SEM_CLIENT_DATA)) > 0
+                if tem_sem_client_data:
+                    tipos_ccb.append(SEM_CLIENT_DATA)
+                subfiltro_ccb = st.multiselect(
+                    "Tipo de operação (CCB)",
+                    options=tipos_ccb,
+                    default=tipos_ccb,
+                    key="cart_subfiltro_ccb",
+                    help=(
+                        f"'{SEM_CLIENT_DATA}' = contratos sem registro correspondente em client_data."
+                        if tem_sem_client_data else None
+                    ),
+                )
+
+        subfiltro_cpr = None
+        if col_cpr is not None:
+            with col_cpr:
+                tipos_cpr = sorted(cpr_bruto["productType"].dropna().unique().tolist())
+                subfiltro_cpr = st.multiselect(
+                    "Tipo de produto (CPR)",
+                    options=tipos_cpr,
+                    default=tipos_cpr,
+                    key="cart_subfiltro_cpr",
+                )
+
+        # --- Período (só as datas, sem radio) — default cobre toda a
+        # carteira: da originação mais antiga até hoje.
+        min_data_geral = pd.concat(
+            [pd.to_datetime(ccb_bruto["releaseDate"]), pd.to_datetime(cpr_bruto["releaseDate"])]
+        ).min()
+        hoje = pd.Timestamp.now().date()
+        col_ini, col_fim, _col_periodo_spacer = st.columns([1, 1, 8])
+        with col_ini:
+            data_inicio = st.date_input(
+                "Início", value=min_data_geral.date(), min_value=min_data_geral.date(),
+                max_value=hoje, key="cart_data_inicio",
+            )
+        with col_fim:
+            data_fim = st.date_input(
+                "Fim", value=hoje, min_value=min_data_geral.date(),
+                max_value=hoje, key="cart_data_fim",
+            )
+
+        st.form_submit_button("🔍 Filtrar", type="primary")
 
     error_msg = None
     with st.spinner("Calculando indicadores a partir do SGC..."):
@@ -127,6 +168,8 @@ def render_carteira():
                 tuple(sorted(subfiltro_ccb)) if subfiltro_ccb is not None else None,
                 tuple(sorted(subfiltro_cpr)) if subfiltro_cpr is not None else None,
                 tuple(sorted(portfolios_selecionados)),
+                data_inicio,
+                data_fim,
             )
         except Exception as exc:
             error_msg = str(exc)
@@ -189,26 +232,26 @@ def render_carteira():
     c2.metric("Valor pago", _brl(reneg["valor_pago"]))
     c3.metric("Saldo devedor", _brl(reneg["saldo_devedor"]))
 
-    perfil_antes = resultados["renegociacao_perfil_antes"]
-    if not perfil_antes.empty:
-        antes = perfil_antes.iloc[0]
-        st.markdown("**Perfil dos contratos antes da renegociação**")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Estavam em default", _pct(antes["pct_estavam_em_default"]))
-        c2.metric("Atraso médio (dias)", f"{antes['atraso_medio_dias']:.1f}")
-        c3.metric("Estavam em 90+ dias", _pct(antes["pct_max_delay_90mais"]))
+    # perfil_antes = resultados["renegociacao_perfil_antes"]
+    # if not perfil_antes.empty:
+    #     antes = perfil_antes.iloc[0]
+    #     st.markdown("**Perfil dos contratos antes da renegociação**")
+    #     c1, c2, c3 = st.columns(3)
+    #     c1.metric("Estavam em default", _pct(antes["pct_estavam_em_default"]))
+    #     c2.metric("Atraso médio (dias)", f"{antes['atraso_medio_dias']:.1f}")
+    #     c3.metric("Estavam em 90+ dias", _pct(antes["pct_max_delay_90mais"]))
 
     # --- Mix por produto -----------------------------------------------------
-    st.divider()
-    st.subheader("🧾 Mix por produto")
-    col_a, col_b = st.columns([1.3, 1])
-    with col_a:
-        st.plotly_chart(build_mix_produto_chart(resultados["mix_produto"]), width="stretch")
-    with col_b:
-        st.dataframe(
-            resultados["mix_produto"].style.format({"saldo_devedor": "{:,.2f}"}),
-            hide_index=True, width="stretch",
-        )
+    # st.divider()
+    # st.subheader("🧾 Mix por produto")
+    # col_a, col_b = st.columns([1.3, 1])
+    # with col_a:
+    #     st.plotly_chart(build_mix_produto_chart(resultados["mix_produto"]), width="stretch")
+    # with col_b:
+    #     st.dataframe(
+    #         resultados["mix_produto"].style.format({"saldo_devedor": "{:,.2f}"}),
+    #         hide_index=True, width="stretch",
+    #     )
 
     # --- NPL por faixa e aging -----------------------------------------------
     st.divider()

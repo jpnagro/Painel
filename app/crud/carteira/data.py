@@ -308,6 +308,38 @@ def aplicar_filtro_portfolio(ccb, cpr, inst_ccb, inst_cpr, portfolios):
     return ccb_filt, cpr_filt, inst_ccb_filt, inst_cpr_filt
 
 
+def aplicar_filtro_periodo(ccb, cpr, inst_ccb, inst_cpr, data_inicio=None, data_fim=None):
+    """Filtra pela data de originação (releaseDate) do contrato RAIZ (o
+    original, não-renegociado) -- mesma semântica de "Valor Originado"
+    usada no resto da aba: uma renegociação não é uma nova originação, só
+    reestrutura o saldo do contrato raiz. A raiz + TODAS as suas
+    renegociações entram juntas sempre que a raiz foi originada dentro de
+    [data_inicio, data_fim] (qualquer um dos dois pode ser `None` = sem
+    limite daquele lado; os dois `None` = sem filtro nenhum).
+
+    Sem filtrar pela raiz, uma renegociação feita fora do período faria o
+    contrato "desaparecer" mesmo tendo sido originado dentro dele (ela
+    tem sua própria releaseDate, posterior à da raiz)."""
+    if data_inicio is None and data_fim is None:
+        return ccb, cpr, inst_ccb, inst_cpr
+
+    def _raizes_no_periodo(tabela):
+        raiz = tabela[~_bool_true(tabela["renegotiation"])].copy()
+        raiz["releaseDate"] = pd.to_datetime(raiz["releaseDate"])
+        mask = pd.Series(True, index=raiz.index)
+        if data_inicio is not None:
+            mask &= raiz["releaseDate"] >= pd.Timestamp(data_inicio)
+        if data_fim is not None:
+            mask &= raiz["releaseDate"] <= pd.Timestamp(data_fim)
+        return set(raiz.loc[mask, "operationCode"])
+
+    ccb_filt = _filtrar_por_grupo_raiz(ccb, _raizes_no_periodo(ccb))
+    cpr_filt = _filtrar_por_grupo_raiz(cpr, _raizes_no_periodo(cpr))
+    inst_ccb_filt = inst_ccb[inst_ccb["operationCode"].isin(set(ccb_filt["operationCode"]))]
+    inst_cpr_filt = inst_cpr[inst_cpr["operationCode"].isin(set(cpr_filt["operationCode"]))]
+    return ccb_filt, cpr_filt, inst_ccb_filt, inst_cpr_filt
+
+
 # ---------------------------------------------------------------------------
 # 3. ESTADO ATUAL DE CADA CONTRATO (saldo + atraso), a partir das parcelas
 # ---------------------------------------------------------------------------

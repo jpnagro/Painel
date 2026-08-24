@@ -10,22 +10,22 @@ from crud.painel_executivo.view import render_painel_executivo
 st.set_page_config(page_title="Painel Nagro — Crédito", layout="wide")
 
 (
-    tab_estabilidade, tab_monitoramento, tab_carteira, tab_executivo,
+    tab_monitoramento, tab_carteira, tab_executivo,
     tab_analise_risco, tab_monitoramento_clientes,
 ) = st.tabs([
-    "📊 Estabilidade Rating (PSI/KS1)",
-    "🎯 Monitoramento do Modelo",
+    "📊 Monitoramento do Modelo",
     "💼 Análise da Carteira",
     "📈 Painel Executivo",
     "🔬 Análise de Risco",
     "🚦 Monitoramento de Clientes",
 ])
 
-with tab_estabilidade:
-    render_estabilidade()
-
 with tab_monitoramento:
-    render_monitoramento()
+    sub_relatorio, sub_estabilidade = st.tabs(["Relatório", "Estabilidade Rating"])
+    with sub_relatorio:
+        render_monitoramento()
+    with sub_estabilidade:
+        render_estabilidade()
 
 with tab_carteira:
     render_carteira()

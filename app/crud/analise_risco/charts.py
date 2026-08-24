@@ -95,7 +95,7 @@ def build_ranking_dispersao(disp):
                       "%{customdata[0]} (%{customdata[1]:.2f}%% NPL90+)<extra></extra>",
     ))
     fig.update_layout(
-        title="Poder discriminante por variável (dispersão de NPL90+ entre categorias)",
+        title="Dispersão de NPL90+ entre categorias",
         height=max(280, 46 * len(t)), xaxis_title="Dispersão (pontos percentuais)",
         margin=dict(l=10, r=60, t=60, b=40),
     )
