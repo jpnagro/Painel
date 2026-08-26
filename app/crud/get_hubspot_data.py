@@ -37,7 +37,6 @@ FIELD_MAP = {
     "Data consulta": "createdate",
 }
 
-
 def fetch_deals_by_pipeline(pipeline_id, properties, page_size=200, extra_filters=None):
     url = f"{BASE_URL_CRM}/crm/v3/objects/deals/search"
     all_results = []
