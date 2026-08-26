@@ -35,3 +35,5 @@ URI_MG = getenv("URI_MG")
 COL_MG_C = getenv("COL_MG_C")
 
 AUTH_KEY = getenv("AUTH_KEY")
+
+OPENAI_API_KEY = getenv("OPENAI_API_KEY")

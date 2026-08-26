@@ -2,6 +2,7 @@ import streamlit as st
 
 from crud.analise_risco.view import render_analise_risco
 from crud.carteira.view import render_carteira
+from crud.chat_ai.view import render_chat_ai
 from crud.estabilidade import render_estabilidade
 from crud.monitoramento.view import render_monitoramento
 from crud.monitoramento_clientes.view import render_monitoramento_clientes
@@ -11,13 +12,14 @@ st.set_page_config(page_title="Painel Nagro — Crédito", layout="wide")
 
 (
     tab_monitoramento, tab_carteira, tab_executivo,
-    tab_analise_risco, tab_monitoramento_clientes,
+    tab_analise_risco, tab_monitoramento_clientes, tab_chat_ai,
 ) = st.tabs([
     "📊 Monitoramento do Modelo",
     "💼 Análise da Carteira",
     "📈 Painel Executivo",
     "🔬 Análise de Risco",
     "🚦 Monitoramento de Clientes",
+    "🤖 Chat AI",
 ])
 
 with tab_monitoramento:
@@ -38,3 +40,6 @@ with tab_analise_risco:
 
 with tab_monitoramento_clientes:
     render_monitoramento_clientes()
+
+with tab_chat_ai:
+    render_chat_ai()
