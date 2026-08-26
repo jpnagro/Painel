@@ -28,6 +28,7 @@ INTERNAL_PROPERTIES = [
     "createdate",
 ]
 
+
 FIELD_MAP = {
     "Rating Nagro 4.0": "rating_nagro_4_0",
     "Score Nagro 4.0": "score_nagro_4_0",
