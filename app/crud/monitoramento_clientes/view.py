@@ -36,6 +36,7 @@ from crud.monitoramento_clientes.indicators import (
 # usada na aba "Análise da carteira" (`crud/carteira/data.py`), pra não
 # divergir do rótulo/critério de "sem client_data" usado lá.
 from crud.carteira.data import SEM_CLIENT_DATA
+from core.ui import colunas_compactas
 # Reaproveita a MESMA base (e o mesmo cache) já usada pela aba "Painel
 # Executivo" pra saber o estado de carteira (quitado/write-off) de cada
 # contrato — evita consultar o Postgres de novo só pra isso. Como o
@@ -147,70 +148,127 @@ def render_monitoramento_clientes():
             f"{pares_status['createdAt_atual'].max().strftime('%d/%m/%Y %H:%M')}"
         )
 
-    # --- Filtros: produto e estado de carteira ---------------------------------
-    # col_produto, col_carteira = st.columns([1, 2])
-    # with col_carteira:
-    carteira_selecionada = st.radio(
-        "Carteira",
-        options=CARTEIRAS,
-        index=0,
-        horizontal=True,
-        key="moncli_filtro_carteira",
-        help=(
-            "Mesmo critério da aba \"Painel Executivo\": \"Carteira em aberto\" exclui "
-            "contratos já quitados e os em write-off (atraso ≥ 360 dias); \"WriteOff\" mostra "
-            "só os em write-off; \"Carteira total\" não filtra por estado."
-        ),
-    )
-    # with col_produto:
-    produtos_disponiveis = sorted(pares_status["produto_atual"].dropna().unique().tolist())
-    produtos_selecionados = st.multiselect(
-        "Produto",
-        options=produtos_disponiveis,
-        default=produtos_disponiveis,
-        key="moncli_filtro_produto",
-    )
-    
+    df_bruto = carregar_monitoramento_bruto()
+    data_max = df_bruto["createdAt"].max().date()
+    fim1_default = data_max
+    inicio1_default = fim1_default - datetime.timedelta(days=7)
+    # Filtro 2 (referência) por padrão = período imediatamente anterior ao
+    # filtro 1, com a mesma duração (7 dias) — ex.: filtro 1 = 14/08 a
+    # 21/08 ⇒ filtro 2 = 06/08 a 13/08.
+    fim2_default = inicio1_default - datetime.timedelta(days=1)
+    inicio2_default = fim2_default - datetime.timedelta(days=7)
 
-    # Sub-filtro de tipo — mesma lógica/opções da aba "Análise da carteira":
-    # "Tipo de operação (CCB)" (client_data.operationType) só aparece se CCB
-    # estiver entre os produtos selecionados; "Tipo de produto (CPR)"
-    # (cpr.productType), só se CPR estiver.
-    col_sub_ccb, col_sub_cpr = st.columns(2)
-    subfiltro_ccb = None
-    with col_sub_ccb:
-        if "CCB" in produtos_selecionados:
-            tipos_ccb = ["App", "Crédito Produtor"]
-            tem_sem_client_data = bool((
-                (pares_status["produto_atual"] == "CCB")
-                & pares_status["tipo_operacao_ccb_atual"].isna()
-            ).any())
-            if tem_sem_client_data:
-                tipos_ccb.append(SEM_CLIENT_DATA)
-            subfiltro_ccb = st.multiselect(
-                "Tipo de operação (CCB)",
-                options=tipos_ccb,
-                default=tipos_ccb,
-                key="moncli_subfiltro_ccb",
+    # Filtros dentro de um `st.form`: as mudanças só são aplicadas (e a aba
+    # só recalcula/re-renderiza a partir daqui) quando "🔍 Filtrar" é
+    # clicado -- evita recarregar tudo a cada seleção individual.
+    with st.form("moncli_filtros_form"):
+        carteira_selecionada = st.radio(
+            "Carteira",
+            options=CARTEIRAS,
+            index=0,
+            horizontal=True,
+            key="moncli_filtro_carteira",
+            help=(
+                "Mesmo critério da aba \"Painel Executivo\": \"Carteira em aberto\" exclui "
+                "contratos já quitados e os em write-off (atraso ≥ 360 dias); \"WriteOff\" mostra "
+                "só os em write-off; \"Carteira total\" não filtra por estado."
+            ),
+        )
+        # Produto + subfiltros de tipo (mesma lógica/opções da aba "Análise da
+        # carteira": "Tipo de operação (CCB)" só aparece se CCB estiver entre os
+        # produtos selecionados; "Tipo de produto (CPR)", só se CPR estiver) +
+        # "Status da carteira", tudo em uma única linha.
+        produtos_disponiveis = sorted(pares_status["produto_atual"].dropna().unique().tolist())
+        # Lê a seleção corrente de "Produto" antes de montar a linha, pra
+        # decidir quais subfiltros (CCB/CPR) ficam ativos e evitar lacuna
+        # vazia quando um dos dois não está selecionado — "Status da carteira"
+        # sobe/desloca pra preencher o espaço.
+        produtos_atual = st.session_state.get("moncli_filtro_produto", produtos_disponiveis)
+        col_produto, col_sub_ccb, col_sub_cpr, col_status = colunas_compactas(
+            [True, "CCB" in produtos_atual, "CPR" in produtos_atual, True]
+        )
+
+        with col_produto:
+            produtos_selecionados = st.multiselect(
+                "Produto",
+                options=produtos_disponiveis,
+                default=produtos_disponiveis,
+                key="moncli_filtro_produto",
+            )
+
+        subfiltro_ccb = None
+        if col_sub_ccb is not None:
+            with col_sub_ccb:
+                tipos_ccb = ["App", "Crédito Produtor"]
+                tem_sem_client_data = bool((
+                    (pares_status["produto_atual"] == "CCB")
+                    & pares_status["tipo_operacao_ccb_atual"].isna()
+                ).any())
+                if tem_sem_client_data:
+                    tipos_ccb.append(SEM_CLIENT_DATA)
+                subfiltro_ccb = st.multiselect(
+                    "Tipo de operação (CCB)",
+                    options=tipos_ccb,
+                    default=tipos_ccb,
+                    key="moncli_subfiltro_ccb",
+                    help=(
+                        f"'{SEM_CLIENT_DATA}' = contratos sem registro correspondente em client_data."
+                        if tem_sem_client_data else None
+                    ),
+                )
+
+        subfiltro_cpr = None
+        if col_sub_cpr is not None:
+            with col_sub_cpr:
+                tipos_cpr = sorted(
+                    pares_status.loc[pares_status["produto_atual"] == "CPR", "tipo_produto_cpr_atual"]
+                    .dropna().unique().tolist()
+                )
+                subfiltro_cpr = st.multiselect(
+                    "Tipo de produto (CPR)",
+                    options=tipos_cpr,
+                    default=tipos_cpr,
+                    key="moncli_subfiltro_cpr",
+                )
+
+        with col_status:
+            status_carteira_selecionados = st.multiselect(
+                "Status da carteira",
+                options=["Carteira Inadimplente", "Carteira Adimplente"],
+                default=["Carteira Adimplente"],
+                key="moncli_filtro_status_carteira",
                 help=(
-                    f"'{SEM_CLIENT_DATA}' = contratos sem registro correspondente em client_data."
-                    if tem_sem_client_data else None
+                    "\"Carteira Inadimplente\": contratos em aberto (não quitados e sem atingir o corte de "
+                    "write-off) e com atraso (max_delay > 0). \"Carteira Adimplente\": todo o restante "
+                    "(quitados, write-off, ou em aberto mas em dia)."
                 ),
             )
 
-    subfiltro_cpr = None
-    with col_sub_cpr:
-        if "CPR" in produtos_selecionados:
-            tipos_cpr = sorted(
-                pares_status.loc[pares_status["produto_atual"] == "CPR", "tipo_produto_cpr_atual"]
-                .dropna().unique().tolist()
+        # --- Filtros de período: análise (filtro 1) x referência (filtro 2) --
+        st.subheader("🗓️ Períodos de comparação")
+        st.caption(
+            "**Filtro 1 (análise)** define o valor mais atual a ser exibido; **filtro 2 (referência)** "
+            "define o valor usado para comparação. Em cada período, entram os contratos com ao menos "
+            "uma consulta dentro do intervalo escolhido; o valor usado para cada um é o histórico "
+            "acumulado até a data final do período (mesmo que a consulta mais recente registrada tenha "
+            "sido feita antes do início do período)."
+        )
+
+        col_p1, col_p2, _col_periodos_spacer = st.columns([1, 1, 6])
+        with col_p1:
+            periodo1 = st.date_input(
+                "Período de análise (filtro 1)",
+                value=(inicio1_default, fim1_default),
+                key="moncli_periodo1",
             )
-            subfiltro_cpr = st.multiselect(
-                "Tipo de produto (CPR)",
-                options=tipos_cpr,
-                default=tipos_cpr,
-                key="moncli_subfiltro_cpr",
+        with col_p2:
+            periodo2 = st.date_input(
+                "Período de referência (filtro 2)",
+                value=(inicio2_default, fim2_default),
+                key="moncli_periodo2",
             )
+
+        st.form_submit_button("🔍 Filtrar", type="primary")
 
     base = pares_status[pares_status["produto_atual"].isin(produtos_selecionados)].copy()
     base = aplicar_subfiltro_tipo(base, subfiltro_ccb, subfiltro_cpr)
@@ -227,18 +285,8 @@ def render_monitoramento_clientes():
             "conforme o caso)."
         )
 
-    # --- Status da carteira: Inadimplente x Adimplente --------------------------
-    status_carteira_selecionados = st.multiselect(
-        "Status da carteira",
-        options=["Carteira Inadimplente", "Carteira Adimplente"],
-        default=["Carteira Inadimplente", "Carteira Adimplente"],
-        key="moncli_filtro_status_carteira",
-        help=(
-            "\"Carteira Inadimplente\": contratos em aberto (não quitados e sem atingir o corte de "
-            "write-off) e com atraso (max_delay > 0). \"Carteira Adimplente\": todo o restante "
-            "(quitados, write-off, ou em aberto mas em dia)."
-        ),
-    )
+    # --- Status da carteira: Inadimplente x Adimplente (filtro já capturado
+    # na linha de filtros acima, junto com Produto/CCB/CPR) ------------------
     base["status_carteira"] = classificar_status_carteira(base, executivo_bruto)
     n_antes_status_carteira = len(base)
     base = base[base["status_carteira"].isin(status_carteira_selecionados)]
@@ -255,37 +303,6 @@ def render_monitoramento_clientes():
     total = len(base)
     com_historico = int(base["tem_historico"].sum())
     sem_historico = total - com_historico
-
-    # --- Filtros de período: análise (filtro 1) x referência (filtro 2) --------
-    st.subheader("🗓️ Períodos de comparação")
-    st.caption(
-        "**Filtro 1 (análise)** define o valor mais atual a ser exibido; **filtro 2 (referência)** "
-        "define o valor usado para comparação. Em cada período, entram os contratos com ao menos "
-        "uma consulta dentro do intervalo escolhido; o valor usado para cada um é o histórico "
-        "acumulado até a data final do período (mesmo que a consulta mais recente registrada tenha "
-        "sido feita antes do início do período)."
-    )
-
-    df_bruto = carregar_monitoramento_bruto()
-    data_max = df_bruto["createdAt"].max().date()
-    fim1_default = data_max
-    inicio1_default = fim1_default - datetime.timedelta(days=7)
-    fim2_default = fim1_default - datetime.timedelta(days=90)
-    inicio2_default = fim2_default - datetime.timedelta(days=7)
-
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        periodo1 = st.date_input(
-            "Período de análise (filtro 1)",
-            value=(inicio1_default, fim1_default),
-            key="moncli_periodo1",
-        )
-    with col_p2:
-        periodo2 = st.date_input(
-            "Período de referência (filtro 2)",
-            value=(inicio2_default, fim2_default),
-            key="moncli_periodo2",
-        )
 
     # `st.date_input` com intervalo pode devolver só 1 data momentaneamente
     # (entre o clique na data de início e na de fim) — aguarda a segunda

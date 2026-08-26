@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
+hubspot_deals_credito_simplificado.csv
 hubspot_deals.ipynb
 prompt_monitoring.txt
 test.ipynb

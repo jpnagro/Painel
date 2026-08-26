@@ -3,6 +3,7 @@ import numpy as np
 
 from crud.carteira.data import (
     _bool_true,
+    aplicar_filtro_periodo,
     aplicar_filtro_portfolio,
     aplicar_subfiltro_ccb,
     aplicar_subfiltro_cpr,
@@ -585,6 +586,7 @@ def analise_renegociados(contratos, contratos_originais, parcelas_reneg, parcela
 def calcular_indicadores(
     ccb, cpr, inst_ccb, inst_cpr, client,
     produtos=("CCB", "CPR"), subfiltro_ccb=None, subfiltro_cpr=None, portfolios=None,
+    data_inicio=None, data_fim=None,
 ):
     """Roda a preparação das bases + todos os indicadores a partir de
     tabelas JÁ CARREGADAS em memória (não toca no banco) — permite trocar
@@ -609,8 +611,16 @@ def calcular_indicadores(
     `portfolios` é o filtro mais "de fora" (acima do de produto): lista de
     portfolios (installments.portfolio / installments_cpr.portfolio) a
     considerar, ou None pra não filtrar. Aplicado ANTES dos filtros de
-    produto/subfiltro, então vale pra CCB e CPR ao mesmo tempo."""
+    produto/subfiltro, então vale pra CCB e CPR ao mesmo tempo.
+
+    `data_inicio`/`data_fim`: restringe aos contratos cuja RAIZ foi
+    originada (releaseDate) dentro desse intervalo (ver
+    `aplicar_filtro_periodo`). `None` em qualquer um dos dois = sem limite
+    daquele lado; os dois `None` = sem filtro (todo o histórico)."""
     ccb, cpr, inst_ccb, inst_cpr = aplicar_filtro_portfolio(ccb, cpr, inst_ccb, inst_cpr, portfolios)
+    ccb, cpr, inst_ccb, inst_cpr = aplicar_filtro_periodo(
+        ccb, cpr, inst_ccb, inst_cpr, data_inicio=data_inicio, data_fim=data_fim
+    )
 
     produtos = set(produtos) if produtos is not None else {"CCB", "CPR"}
     if "CCB" not in produtos:

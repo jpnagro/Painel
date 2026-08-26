@@ -15,6 +15,7 @@ from crud.analise_risco.indicators import (
     ranking_dispersao,
 )
 from crud.carteira.data import SEM_CLIENT_DATA
+from core.ui import colunas_compactas
 from crud.painel_executivo.charts import build_risco_bar_chart
 from crud.painel_executivo.data import CARTEIRAS, filtrar_executivo
 from crud.painel_executivo.indicators import (
@@ -39,57 +40,83 @@ def load_base_risco(carteira, produtos, subfiltro_ccb, subfiltro_cpr):
 def render_analise_risco():
     st.title("🔬 Análise de Risco por Variável")
     st.caption(
-        "Inspirado nos tópicos 7+ do relatório de referência: quebra a inadimplência "
-        "por perfil de cliente/operação e simula o impacto de excluir um perfil da "
-        "carteira. Usa a mesma base e as mesmas fórmulas do Painel Executivo."
+        "Quebra a inadimplência por perfil de cliente/operação e simula o impacto de excluir um perfil da carteira."
     )
+
+    col_refresh, col_info = st.columns([1, 3])
+    with col_refresh:
+        refresh = st.button("🔄 Recarregar dados", key="risco_refresh")
+    if refresh:
+        load_dados_executivo_brutos.clear()
+        load_base_risco.clear()
 
     df_bruto = preparar_variaveis(load_dados_executivo_brutos())
 
-    # --- Linha 1: Carteira + Recarregar -------------------------------------
-    col_carteira, col_refresh = st.columns([3, 1])
-    with col_carteira:
+    # Filtros dentro de um `st.form`: as mudanças só são aplicadas (e a aba
+    # só recalcula/re-renderiza a partir daqui) quando "🔍 Filtrar" é
+    # clicado -- evita recarregar tudo a cada seleção individual. Os
+    # limites de data usam a base bruta (não filtrada) pra não depender
+    # do resultado do próprio formulário antes dele ser enviado.
+    with st.form("risco_filtros_form"):
+        # --- Linha 1: Carteira -----------------------------------------------
         carteira_selecionada = st.radio(
             "Carteira", options=CARTEIRAS, index=0, horizontal=True, key="risco_filtro_carteira",
         )
-    with col_refresh:
-        st.write("")  # alinha o botão verticalmente com o radio
-        if st.button("🔄 Recarregar dados", key="risco_refresh"):
-            load_dados_executivo_brutos.clear()
-            load_base_risco.clear()
 
-    # --- Linha 2: Produto + subfiltros + mínimo de contratos, tudo compacto -
-    col_produto, col_ccb, col_cpr, col_min = st.columns(4)
-    with col_produto:
-        produtos_selecionados = st.multiselect(
-            "Produto", options=["CCB", "CPR"], default=["CCB", "CPR"], key="risco_filtro_produto",
+        # --- Linha 2: Produto + subfiltros, tudo compacto --------------------
+        produtos_atual = st.session_state.get("risco_filtro_produto", ["CCB", "CPR"])
+        col_produto, col_ccb, col_cpr = colunas_compactas(
+            [True, "CCB" in produtos_atual, "CPR" in produtos_atual]
         )
-
-    subfiltro_ccb = None
-    with col_ccb:
-        if "CCB" in produtos_selecionados:
-            tipos_ccb = ["App", "Crédito Produtor"]
-            tem_sem_client_data = df_bruto.loc[df_bruto["produto"] == "CCB", "categoria"].isna().any()
-            if tem_sem_client_data:
-                tipos_ccb.append(SEM_CLIENT_DATA)
-            subfiltro_ccb = st.multiselect(
-                "Tipo de operação (CCB)", options=tipos_ccb, default=tipos_ccb, key="risco_subfiltro_ccb",
+        with col_produto:
+            produtos_selecionados = st.multiselect(
+                "Produto", options=["CCB", "CPR"], default=["CCB", "CPR"], key="risco_filtro_produto",
             )
 
-    subfiltro_cpr = None
-    with col_cpr:
-        if "CPR" in produtos_selecionados:
-            tipos_cpr = sorted(df_bruto.loc[df_bruto["produto"] == "CPR", "categoria"].dropna().unique().tolist())
-            subfiltro_cpr = st.multiselect(
-                "Tipo de produto (CPR)", options=tipos_cpr, default=tipos_cpr, key="risco_subfiltro_cpr",
+        subfiltro_ccb = None
+        if col_ccb is not None:
+            with col_ccb:
+                tipos_ccb = ["App", "Crédito Produtor"]
+                tem_sem_client_data = df_bruto.loc[df_bruto["produto"] == "CCB", "categoria"].isna().any()
+                if tem_sem_client_data:
+                    tipos_ccb.append(SEM_CLIENT_DATA)
+                subfiltro_ccb = st.multiselect(
+                    "Tipo de operação (CCB)", options=tipos_ccb, default=tipos_ccb, key="risco_subfiltro_ccb",
+                )
+
+        subfiltro_cpr = None
+        if col_cpr is not None:
+            with col_cpr:
+                tipos_cpr = sorted(df_bruto.loc[df_bruto["produto"] == "CPR", "categoria"].dropna().unique().tolist())
+                subfiltro_cpr = st.multiselect(
+                    "Tipo de produto (CPR)", options=tipos_cpr, default=tipos_cpr, key="risco_subfiltro_cpr",
+                )
+
+        # --- Linha 2b: Mínimo de contratos por categoria (bem compacto) -----
+        col_min, _col_min_spacer = st.columns([1, 9])
+        with col_min:
+            min_contratos = st.number_input(
+                "Mínimo de contratos por categoria", min_value=1, value=5, step=1, key="risco_min_contratos",
+                help="Categorias com menos contratos que isso são descartadas das análises "
+                "abaixo — evita destacar uma categoria de 1-2 contratos como '100% inadimplente'.",
             )
 
-    with col_min:
-        min_contratos = st.number_input(
-            "Mínimo de contratos por categoria", min_value=1, value=5, step=1, key="risco_min_contratos",
-            help="Categorias com menos contratos que isso são descartadas das análises "
-            "abaixo — evita destacar uma categoria de 1-2 contratos como '100% inadimplente'.",
-        )
+        # --- Linha 3: Período (só as datas, sem o radio) --------------------
+        min_data_geral = df_bruto["releaseDate"].min()
+        max_data_geral = df_bruto["releaseDate"].max()
+        col_ini, col_fim, _col_periodo_spacer = st.columns([1, 1, 8])
+        with col_ini:
+            data_inicio = st.date_input(
+                "Início", value=min_data_geral.date(), min_value=min_data_geral.date(),
+                max_value=max_data_geral.date(), key="risco_data_inicio",
+            )
+        with col_fim:
+            data_fim = st.date_input(
+                "Fim", value=max_data_geral.date(), min_value=min_data_geral.date(),
+                max_value=max_data_geral.date(), key="risco_data_fim",
+            )
+
+        st.form_submit_button("🔍 Filtrar", type="primary")
 
     df = load_base_risco(
         carteira_selecionada,
@@ -102,35 +129,16 @@ def render_analise_risco():
         st.warning("Nenhum contrato nesse recorte de filtros.")
         st.stop()
 
-    # --- Linha 3: Período (radio + datas na mesma linha) --------------------
-    col_periodo, col_ini, col_fim = st.columns([1.4, 1, 1])
-    with col_periodo:
-        tipo_periodo = st.radio(
-            "Período", options=["Todo histórico", "Período específico"], index=0,
-            horizontal=True, key="risco_tipo_periodo",
-        )
-    data_inicio = data_fim = None
-    if tipo_periodo == "Período específico":
-        min_data = df["releaseDate"].min()
-        max_data = df["releaseDate"].max()
-        with col_ini:
-            data_inicio = st.date_input(
-                "Início", value=min_data.date(), min_value=min_data.date(),
-                max_value=max_data.date(), key="risco_data_inicio",
-            )
-        with col_fim:
-            data_fim = st.date_input(
-                "Fim", value=max_data.date(), min_value=min_data.date(),
-                max_value=max_data.date(), key="risco_data_fim",
-            )
-        df = filtrar_por_periodo(df, data_inicio=data_inicio, data_fim=data_fim)
-        if not len(df):
-            st.warning("Nenhum contrato originado nesse período.")
-            st.stop()
+    df = filtrar_por_periodo(df, data_inicio=data_inicio, data_fim=data_fim)
+    if not len(df):
+        st.warning("Nenhum contrato originado nesse período.")
+        st.stop()
 
     st.caption(f"{len(df):,} contratos no recorte.")
 
     sub_tab_variaveis, sub_tab_simulador = st.tabs(["📊 Análise de variáveis", "🧪 Simulador"])
+
+    st.divider()
 
     with sub_tab_variaveis:
         _render_analise_variaveis(df, min_contratos)
@@ -141,8 +149,7 @@ def render_analise_risco():
 
 def _render_analise_variaveis(df, min_contratos):
     # --- Ranking de poder discriminante -------------------------------------
-    st.divider()
-    st.subheader("Quais variáveis mais separam bom de mau pagador?")
+    st.subheader("Poder discriminante por variável")
     disp = ranking_dispersao(df, VARIAVEIS, min_contratos=min_contratos)
     col_disp_grafico, col_disp_tabela = st.columns(2)
     with col_disp_grafico:
@@ -159,7 +166,9 @@ def _render_analise_variaveis(df, min_contratos):
     # --- Exploração por variável ---------------------------------------------
     st.divider()
     st.subheader("Inadimplência por variável")
-    variavel_selecionada = st.selectbox("Variável", options=list(VARIAVEIS.keys()), key="risco_variavel")
+    col_var, _col_periodo_spacer = st.columns([1, 9])
+    with col_var:
+        variavel_selecionada = st.selectbox("Variável", options=list(VARIAVEIS.keys()), key="risco_variavel")
     coluna = VARIAVEIS[variavel_selecionada]
     tabela = inadimplencia_por_variavel(df, coluna, min_contratos=min_contratos)
 
@@ -188,7 +197,7 @@ def _render_analise_variaveis(df, min_contratos):
     # --- Cruzamento de duas variáveis ---------------------------------------
     st.divider()
     st.subheader("Cruzamento de duas variáveis")
-    col_c, col_d = st.columns(2)
+    col_c, col_d, _col_var = st.columns([1,1,8])
     with col_c:
         var1 = st.selectbox("Variável 1", options=list(VARIAVEIS.keys()), index=0, key="risco_var1")
     with col_d:
@@ -219,7 +228,6 @@ def _kpi_comparativo(col, titulo, valor_atual, valor_simulado, formatter, delta_
 
 
 def _render_simulador(df):
-    st.divider()
     st.subheader("Simulador de exclusão de perfil")
     st.caption(
         "Escolha um ou dois critérios (ex.: UF = RN e Setor = bovino corte) pra simular "

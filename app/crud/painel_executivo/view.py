@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from crud.analise_risco.data import filtrar_por_periodo
 from crud.painel_executivo.charts import build_donut_chart, build_risco_bar_chart, build_safra_combo_chart
 from crud.painel_executivo.data import CARTEIRAS
 from crud.painel_executivo.indicators import calcular_indicadores_executivo, carregar_dados_executivo_bruto
@@ -16,11 +17,12 @@ def load_dados_executivo_brutos():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_indicadores_executivo(produto, carteira):
+def load_indicadores_executivo(produto, carteira, data_inicio=None, data_fim=None):
     """Calcula os indicadores a partir da base já em memória (cache de
-    `load_dados_executivo_brutos`). Cada combinação de produto/carteira
-    tem sua própria entrada de cache."""
+    `load_dados_executivo_brutos`). Cada combinação de produto/carteira/
+    período tem sua própria entrada de cache."""
     df_bruto = load_dados_executivo_brutos()
+    df_bruto = filtrar_por_periodo(df_bruto, data_inicio=data_inicio, data_fim=data_fim)
     return calcular_indicadores_executivo(df_bruto, produto=produto, carteira=carteira)
 
 
@@ -48,27 +50,51 @@ def _kpi_card(col, titulo, valor_total_fmt, partes_fmt):
 
 
 def render_painel_executivo():
-    st.title("🎯 Painel Executivo")
+    st.title("📈 Painel Executivo")
     st.caption(
         "Nesta aba encontra-se indicadores gerais que podem ser filtrados por Produto e Carteira."
     )
 
-    produto_selecionado = st.radio(
-        "Produto", options=["CCB", "CPR"], index=0, horizontal=True, key="exec_filtro_produto",
-    )
-    carteira_selecionada = st.radio(
-        "Carteira", options=CARTEIRAS, index=0, horizontal=True, key="exec_filtro_carteira",
-    )
-
-    refresh = st.button("🔄 Recarregar dados", key="exec_refresh")
+    col_refresh, col_info = st.columns([1, 3])
+    with col_refresh:
+        refresh = st.button("🔄 Recarregar dados", key="exec_refresh")
     if refresh:
         load_dados_executivo_brutos.clear()
         load_indicadores_executivo.clear()
 
+    # Filtros dentro de um `st.form`: as mudanças só são aplicadas (e a aba
+    # só recalcula/re-renderiza a partir daqui) quando "🔍 Filtrar" é
+    # clicado -- evita recarregar tudo a cada seleção individual.
+    with st.form("exec_filtros_form"):
+        produto_selecionado = st.radio(
+            "Produto", options=["CCB", "CPR"], index=0, horizontal=True, key="exec_filtro_produto",
+        )
+        carteira_selecionada = st.radio(
+            "Carteira", options=CARTEIRAS, index=0, horizontal=True, key="exec_filtro_carteira",
+        )
+
+        # --- Período (só as datas, sem radio) — default cobre toda a
+        # carteira: da originação mais antiga até hoje.
+        min_data_geral = load_dados_executivo_brutos()["releaseDate"].min()
+        hoje = pd.Timestamp.now().date()
+        col_ini, col_fim, _col_periodo_spacer = st.columns([1, 1, 8])
+        with col_ini:
+            data_inicio = st.date_input(
+                "Início", value=min_data_geral.date(), min_value=min_data_geral.date(),
+                max_value=hoje, key="exec_data_inicio",
+            )
+        with col_fim:
+            data_fim = st.date_input(
+                "Fim", value=hoje, min_value=min_data_geral.date(),
+                max_value=hoje, key="exec_data_fim",
+            )
+
+        st.form_submit_button("🔍 Filtrar", type="primary")
+
     error_msg = None
     with st.spinner("Calculando indicadores executivos..."):
         try:
-            r = load_indicadores_executivo(produto_selecionado, carteira_selecionada)
+            r = load_indicadores_executivo(produto_selecionado, carteira_selecionada, data_inicio, data_fim)
         except Exception as exc:
             error_msg = str(exc)
             r = None

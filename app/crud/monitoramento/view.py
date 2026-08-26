@@ -22,6 +22,12 @@ def render_monitoramento():
     st.title("📊 Monitoramento do Modelo de Risco de Crédito v4")
     st.caption("Comparativo entre a base de referência (treino/teste) e a carteira em produção")
 
+    col_refresh, col_info = st.columns([1, 3])
+    with col_refresh:
+        refresh = st.button("🔄 Recarregar dados", key="mon_refresh")
+    if refresh:
+        st.cache_data.clear()
+
     with st.expander("Referências dos indicadores", expanded=False):
         st.markdown(
             """
@@ -33,18 +39,11 @@ def render_monitoramento():
 """
         )
 
-    col_start, col_end, col_refresh = st.columns([1, 1, 1])
+    col_start, col_end, _col_datas_spacer = st.columns([1, 1, 2])
     with col_start:
         start_date = st.date_input("Início (produção)", value=DEFAULT_START, key="mon_start_date")
     with col_end:
         end_date = st.date_input("Fim (produção)", value=DEFAULT_END, key="mon_end_date")
-    with col_refresh:
-        st.write("")
-        st.write("")
-        refresh = st.button("🔄 Recarregar dados", width="stretch", key="mon_refresh")
-
-    if refresh:
-        st.cache_data.clear()
 
     data_ok = False
     error_msgs = []
