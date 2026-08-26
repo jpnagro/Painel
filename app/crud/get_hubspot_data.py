@@ -28,6 +28,7 @@ INTERNAL_PROPERTIES = [
     "createdate",
 ]
 
+
 FIELD_MAP = {
     "Rating Nagro 4.0": "rating_nagro_4_0",
     "Score Nagro 4.0": "score_nagro_4_0",
@@ -36,7 +37,6 @@ FIELD_MAP = {
     "CNPJ/CPF (único)": "cnpj_cpf__unico_",
     "Data consulta": "createdate",
 }
-
 
 def fetch_deals_by_pipeline(pipeline_id, properties, page_size=200, extra_filters=None):
     url = f"{BASE_URL_CRM}/crm/v3/objects/deals/search"
