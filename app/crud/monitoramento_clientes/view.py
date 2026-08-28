@@ -104,7 +104,8 @@ def load_pares_status():
     return pares_status
 
 
-def render_monitoramento_clientes():
+@st.fragment
+def _render_monitoramento_clientes_body():
     st.title("🚦 Monitoramento de Clientes")
     st.caption(
         "Cada contrato é reconsultado periodicamente (rating, score, dívidas e protestos externos "
@@ -356,27 +357,44 @@ def render_monitoramento_clientes():
     col_cobertura, col_alertas = st.columns(2)
 
     with col_cobertura:
-        st.subheader("📋 Cobertura do monitoramento")
+        st.subheader(
+            "📋 Cobertura do monitoramento",
+            help="Cada indicador conta contratos com ao menos uma consulta dentro do período "
+            "escolhido (filtro 1 em destaque, filtro 2 como referência abaixo). O percentual ao "
+            "lado do valor é a variação entre os dois períodos.",
+        )
         st.caption(
             f"Filtro 1: {inicio1.strftime('%d/%m/%Y')} a {fim1.strftime('%d/%m/%Y')}  |  "
             f"Filtro 2: {inicio2.strftime('%d/%m/%Y')} a {fim2.strftime('%d/%m/%Y')}."
         )
         cc1, cc2, cc3 = st.columns(3)
-        cc1.metric("Monitorados", _fmt_int(n1), _fmt_variacao_pct(n1, n2), delta_color="off")
+        cc1.metric(
+            "Monitorados", _fmt_int(n1), _fmt_variacao_pct(n1, n2), delta_color="off",
+            help="Nº de contratos com pelo menos uma consulta dentro do período de análise (filtro 1).",
+        )
         cc1.caption(f"Ref.: {_fmt_int(n2)}")
         cc2.metric(
             "Com histórico (2+)", _fmt_int(com_historico1),
             _fmt_variacao_pct(com_historico1, com_historico2), delta_color="off",
+            help="Quantos dos monitorados já têm 2 ou mais consultas registradas até o fim do "
+            "período — só esses permitem comparar 'atual x anterior'.",
         )
         cc2.caption(f"Ref.: {_fmt_int(com_historico2)}")
         cc3.metric(
             "1ª consulta", _fmt_int(sem_historico1),
             _fmt_variacao_pct(sem_historico1, sem_historico2), delta_color="off",
+            help="Contratos monitorados que ainda têm só uma consulta registrada (sem histórico "
+            "anterior para comparar).",
         )
         cc3.caption(f"Ref.: {_fmt_int(sem_historico2)}")
 
     with col_alertas:
-        st.subheader("🚨 Alertas")
+        st.subheader(
+            "🚨 Alertas",
+            help="Baseado nos 6 indicadores de risco comparados entre a consulta mais recente e a "
+            "imediatamente anterior de cada contrato: dívida em atraso (overdue), prejuízo (loss), "
+            "dívidas e protestos via Boa Vista, protestos gerais e rating.",
+        )
         st.caption(
             f"Somente os {_fmt_int(total_filtro1)} contratos do período de análise (filtro 1)."
         )
@@ -385,13 +403,20 @@ def render_monitoramento_clientes():
             "Em atenção", _fmt_int(em_atencao),
             f"{_fmt_pct_of(em_atencao, com_historico_filtro1)} do c/ histórico",
             delta_color="off",
+            help="Contratos com pelo menos 1 dos 6 indicadores de risco piorando desde a última "
+            "consulta. % calculado sobre os contratos com histórico comparável (2+ consultas).",
         )
         ca2.metric(
             "Crítico (3+)", _fmt_int(alerta_critico),
             f"{_fmt_pct_of(alerta_critico, com_historico_filtro1)} do c/ histórico",
             delta_color="off",
+            help="Contratos com 3 ou mais dos 6 indicadores de risco piorando ao mesmo tempo desde a "
+            "última consulta.",
         )
-        ca3.metric("Óbito reportado", _fmt_int(obitos), delta_color="off")
+        ca3.metric(
+            "Óbito reportado", _fmt_int(obitos), delta_color="off",
+            help="Contratos cuja consulta mais recente registrou óbito do titular (campo death).",
+        )
 
     if obitos > 0:
         st.error(
@@ -455,33 +480,62 @@ def render_monitoramento_clientes():
     col_rating, col_exposicao = st.columns(2)
 
     with col_rating:
-        st.subheader("⭐ Migração de rating")
+        st.subheader(
+            "⭐ Migração de rating",
+            help="Compara o rating da consulta mais recente com o da consulta imediatamente "
+            "anterior, para cada contrato do período de análise (filtro 1). O mapa de calor mostra a "
+            "matriz completa de transição: de qual rating (linha) para qual rating (coluna).",
+        )
         st.caption(f"Ordem (melhor → pior): {' → '.join(RATING_ORDER)}.")
 
         cr1, cr2, cr3 = st.columns(3)
-        cr1.metric("Melhoraram", _fmt_int(n_melhorou1), _fmt_variacao_pct(n_melhorou1, n_melhorou2), delta_color="off")
+        cr1.metric(
+            "Melhoraram", _fmt_int(n_melhorou1), _fmt_variacao_pct(n_melhorou1, n_melhorou2), delta_color="off",
+            help="Contratos cujo rating da consulta mais recente é melhor que o da consulta anterior.",
+        )
         cr1.caption(f"Ref.: {_fmt_int(n_melhorou2)}")
-        cr2.metric("Pioraram", _fmt_int(n_piorou1), _fmt_variacao_pct(n_piorou1, n_piorou2), delta_color="off")
+        cr2.metric(
+            "Pioraram", _fmt_int(n_piorou1), _fmt_variacao_pct(n_piorou1, n_piorou2), delta_color="off",
+            help="Contratos cujo rating da consulta mais recente é pior que o da consulta anterior.",
+        )
         cr2.caption(f"Ref.: {_fmt_int(n_piorou2)}")
-        cr3.metric("Mantiveram", _fmt_int(n_estavel1), _fmt_variacao_pct(n_estavel1, n_estavel2), delta_color="off")
+        cr3.metric(
+            "Mantiveram", _fmt_int(n_estavel1), _fmt_variacao_pct(n_estavel1, n_estavel2), delta_color="off",
+            help="Contratos cujo rating não mudou entre as duas últimas consultas.",
+        )
         cr3.caption(f"Ref.: {_fmt_int(n_estavel2)}")
 
         tab_transicao = transicao_rating(base_filtro1)
         st.plotly_chart(build_rating_transition_heatmap(tab_transicao), width="stretch")
 
     with col_exposicao:
-        st.subheader("📈 Exposição de crédito no mercado")
+        st.subheader(
+            "📈 Exposição de crédito no mercado",
+            help="Compara o campo credit_portfolio (total de crédito do cliente no mercado, não só "
+            "com a Nagro) entre a consulta mais recente e a anterior — sinal de contexto sobre o "
+            "endividamento geral, não necessariamente 'bom' ou 'ruim'. Variações menores que 1% são "
+            "tratadas como estáveis.",
+        )
         st.caption(
             "`credit_portfolio`: total de crédito do cliente no mercado (não só com a Nagro) — "
             "sinal de contexto, não \"bom\"/\"ruim\" isolado."
         )
 
         ce1, ce2, ce3 = st.columns(3)
-        ce1.metric("Aumentaram", _fmt_int(n_aumentou1), _fmt_variacao_pct(n_aumentou1, n_aumentou2), delta_color="off")
+        ce1.metric(
+            "Aumentaram", _fmt_int(n_aumentou1), _fmt_variacao_pct(n_aumentou1, n_aumentou2), delta_color="off",
+            help="Contratos cujo credit_portfolio subiu (mais de 1%) desde a consulta anterior.",
+        )
         ce1.caption(f"Ref.: {_fmt_int(n_aumentou2)}")
-        ce2.metric("Diminuíram", _fmt_int(n_diminuiu1), _fmt_variacao_pct(n_diminuiu1, n_diminuiu2), delta_color="off")
+        ce2.metric(
+            "Diminuíram", _fmt_int(n_diminuiu1), _fmt_variacao_pct(n_diminuiu1, n_diminuiu2), delta_color="off",
+            help="Contratos cujo credit_portfolio caiu (mais de 1%) desde a consulta anterior.",
+        )
         ce2.caption(f"Ref.: {_fmt_int(n_diminuiu2)}")
-        ce3.metric("Mantiveram", _fmt_int(n_estavel_cp1), _fmt_variacao_pct(n_estavel_cp1, n_estavel_cp2), delta_color="off")
+        ce3.metric(
+            "Mantiveram", _fmt_int(n_estavel_cp1), _fmt_variacao_pct(n_estavel_cp1, n_estavel_cp2), delta_color="off",
+            help="Contratos cuja variação de credit_portfolio ficou dentro de ±1% desde a consulta anterior.",
+        )
         ce3.caption(f"Ref.: {_fmt_int(n_estavel_cp2)}")
 
         resumo_cp = resumo_status_metricas(base_filtro1, ["credit_portfolio"], STATUS_ORDER_NEUTRO)
@@ -501,7 +555,13 @@ def render_monitoramento_clientes():
 
     # --- 4) Watchlist — só contratos monitorados no período de análise ---------
     st.divider()
-    st.subheader("🚨 Contratos em atenção — priorização para acompanhamento")
+    st.subheader(
+        "🚨 Contratos em atenção — priorização para acompanhamento",
+        help="Critério de entrada: contrato monitorado no filtro 1, com histórico comparável (2+ "
+        "consultas) e pelo menos 1 dos 6 indicadores de risco piorando desde a última consulta. "
+        "Ordenação: primeiro por nº de indicadores piorando (maior severidade primeiro), em caso de "
+        "empate pelo maior valor originado.",
+    )
     st.caption(
         f"Somente contratos monitorados no período de análise (filtro 1: "
         f"{inicio1.strftime('%d/%m/%Y')} a {fim1.strftime('%d/%m/%Y')}), com histórico comparável e "
@@ -515,7 +575,10 @@ def render_monitoramento_clientes():
     #     min_value=1, max_value=6, value=1, key="moncli_min_indicadores",
     # )
     watchlist = construir_watchlist(base_filtro1, min_indicadores=min_indicadores)
-    st.metric("Contratos na lista de atenção", _fmt_int(len(watchlist)))
+    st.metric(
+        "Contratos na lista de atenção", _fmt_int(len(watchlist)),
+        help="Contagem de contratos que entraram na watchlist pelo critério acima.",
+    )
 
     if watchlist.empty:
         st.success("Nenhum contrato no critério selecionado.")
@@ -568,7 +631,11 @@ def render_monitoramento_clientes():
 
     # --- 5) Consulta individual — trajetória do cliente --------------------------
     st.divider()
-    st.subheader("🔍 Consulta individual — trajetória do cliente")
+    st.subheader(
+        "🔍 Consulta individual — trajetória do cliente",
+        help="Escolha um contrato para ver a evolução de rating/score e das métricas de dívida/"
+        "atraso/exposição ao longo de todas as consultas registradas (raiz + renegociações).",
+    )
     st.caption(
         f"Trajetória exibida até o fim do período de análise (filtro 1: {fim1.strftime('%d/%m/%Y')}) — "
         "consultas feitas depois dessa data não aparecem aqui."
@@ -611,9 +678,13 @@ def render_monitoramento_clientes():
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Cliente", r["nome_cliente"] or "-")
-            c2.metric("Rating", r["rating"] or "-", status_rating_atual, delta_color="off")
-            c3.metric("Score", _fmt_int(r["score"]))
-            c4.metric("Valor originado", _brl(r["valor_originado"]))
+            c2.metric(
+                "Rating", r["rating"] or "-", status_rating_atual, delta_color="off",
+                help="Rating na consulta mais recente até o fim do período de análise. O rótulo "
+                "abaixo do valor mostra se melhorou/piorou/manteve contra a consulta anterior.",
+            )
+            c3.metric("Score", _fmt_int(r["score"]), help="Score numérico na consulta mais recente.")
+            c4.metric("Valor originado", _brl(r["valor_originado"]), help="Valor de principal originado neste contrato.")
 
             st.plotly_chart(
                 build_trajetoria_chart(historico, f"Trajetória — {operation_code_escolhido}"),
@@ -642,3 +713,10 @@ def render_monitoramento_clientes():
         f"{total:,} contratos monitorados no total ({com_historico:,} com histórico comparável, "
         f"{sem_historico:,} aguardando 2ª consulta)."
     )
+
+
+def render_monitoramento_clientes():
+    """Roda em `st.fragment`: mexer em qualquer filtro (cabeçalho, períodos
+    de comparação, seleção de cliente) só reprocessa esta aba, sem esmaecer
+    o app inteiro."""
+    _render_monitoramento_clientes_body()

@@ -56,7 +56,8 @@ def _pct(v):
     return f"{v:.2f}%"
 
 
-def render_carteira():
+@st.fragment
+def _render_carteira_body():
     st.title("💼 Análise da Carteira de Crédito")
     st.caption(
         "Indicadores calculados a partir das tabelas do SGC (ccb, cpr, installments, "
@@ -182,80 +183,88 @@ def render_carteira():
 
     # --- Resumo da carteira -------------------------------------------------
     st.divider()
-    st.subheader("📊 Resumo da carteira total")
+    st.subheader(
+        "📊 Resumo da carteira total",
+        help="Todos os contratos-raiz do recorte de filtros (Produto/Portfolio/Período), sem excluir "
+        "nada — inclui quitados e write-off. Não é igual à soma de 'Em aberto' + 'WriteOff', pois "
+        "também conta os já quitados.",
+    )
     resumo = resultados["resumo_carteira"].iloc[0]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}")
-    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]))
-    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]))
-    c4.metric("Valor pago", _brl(resumo["valor_pago"]))
-    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]))
-    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']))
+    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz do recorte (renegociações são somadas à raiz, nunca contadas à parte).")
+    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]), help="Soma do valor de principal (principalAmount) concedido — sempre o valor original do contrato, nunca duplicado por renegociação.")
+    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]), help="Soma do valor cheio (pago + em aberto) de todas as parcelas dos contratos do recorte.")
+    c4.metric("Valor pago", _brl(resumo["valor_pago"]), help="Soma dos valores já pagos nas parcelas dos contratos do recorte.")
+    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]), help="Soma do saldo em aberto (valor de face das parcelas ainda não pagas) dos contratos do recorte.")
+    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']), help="Soma do saldo devedor apenas dos contratos do recorte com atraso ≥90 dias em alguma parcela em aberto (contrato inteiro entra, não só a parcela atrasada).")
     # c6.metric("Prazo médio (meses)", f"{resumo['prazo_medio_meses']:.1f}")
 
 
-    st.subheader("📊 Resumo da carteira em aberto")
+    st.subheader(
+        "📊 Resumo da carteira em aberto",
+        help="Mesmos 6 indicadores do bloco 'Total', mas excluindo contratos já 100% quitados e "
+        "contratos em write-off (atraso ≥360 dias) — é a carteira 'viva', ainda não baixada.",
+    )
     resumo = resultados["resumo_carteira_aberta"].iloc[0]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}")
-    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]))
-    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]))
-    c4.metric("Valor pago", _brl(resumo["valor_pago"]))
-    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]))
-    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']))
+    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz em aberto (não quitados e sem atingir 360 dias de atraso).")
+    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]), help="Soma do valor de principal concedido nos contratos em aberto.")
+    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]), help="Soma do valor cheio (pago + em aberto) das parcelas dos contratos em aberto.")
+    c4.metric("Valor pago", _brl(resumo["valor_pago"]), help="Soma dos valores já pagos nas parcelas dos contratos em aberto.")
+    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]), help="Soma do saldo em aberto dos contratos em aberto.")
+    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']), help="Soma do saldo devedor dos contratos em aberto com atraso ≥90 dias — mesma base usada no gráfico 'NPL por faixa de atraso' abaixo.")
     # c6.metric("Prazo médio (meses)", f"{resumo['prazo_medio_meses']:.1f}")
 
 
-    st.subheader("📊 Resumo da carteira em WriteOff")
+    st.subheader(
+        "📊 Resumo da carteira em WriteOff",
+        help="Apenas os contratos-raiz com atraso ≥360 dias em alguma parcela — considerados "
+        "baixados a prejuízo. Como todo write-off já passou dos 90 dias, o 'Saldo NPL 90+' aqui é "
+        "igual ao 'Saldo devedor' deste bloco.",
+    )
     resumo = resultados["resumo_carteira_writeoff"].iloc[0]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}")
-    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]))
-    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]))
-    c4.metric("Valor pago", _brl(resumo["valor_pago"]))
-    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]))
-    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']))
+    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz com atraso ≥360 dias em alguma parcela.")
+    c2.metric("Valor originado", _brl(resumo["valor_originado_total"]), help="Soma do valor de principal concedido nos contratos em write-off.")
+    c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]), help="Soma do valor cheio (pago + em aberto) das parcelas dos contratos em write-off.")
+    c4.metric("Valor pago", _brl(resumo["valor_pago"]), help="Soma dos valores já pagos nas parcelas dos contratos em write-off, antes da baixa.")
+    c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]), help="Soma do saldo em aberto dos contratos em write-off.")
+    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']), help="Igual ao 'Saldo devedor' deste bloco — todo contrato em write-off (≥360 dias) já está muito além do corte de 90 dias.")
     # c6.metric("Prazo médio (meses)", f"{resumo['prazo_medio_meses']:.1f}" if resumo["prazo_medio_meses"] is not None else "-",)
 
     # --- Book de renegociações ------------------------------------------------------
     st.divider()
-    st.subheader("🔁 Book de renegociações")
+    st.subheader(
+        "🔁 Book de renegociações",
+        help="Contratos-raiz que já passaram por ao menos uma renegociação, analisados separadamente "
+        "— nunca somados aos indicadores dos blocos 'Total/Em aberto/WriteOff' acima, para não contar "
+        "o mesmo crédito duas vezes.",
+    )
     st.caption("Análise separada — nunca somada aos indicadores principais acima.")
     reneg = resultados["renegociacao_taxa"].iloc[0]
     c1, c2, c3 = st.columns(3)
-    c1.metric("Contratos renegociados", f"{int(reneg['n_contratos_renegociados']):,}")
-    c2.metric("Taxa de renegociação", _pct(reneg["taxa_renegociacao_pct"]))
-    c3.metric("Valor total renegociado", _brl(reneg["valor_total_renegociado"]))
+    c1.metric("Contratos renegociados", f"{int(reneg['n_contratos_renegociados']):,}", help="Contagem de contratos-raiz que já foram renegociados ao menos uma vez.")
+    c2.metric("Taxa de renegociação", _pct(reneg["taxa_renegociacao_pct"]), help="Contratos renegociados ÷ total de contratos-raiz do recorte.")
+    c3.metric("Valor total renegociado", _brl(reneg["valor_total_renegociado"]), help="Saldo que os contratos tinham no momento em que foram substituídos pela renegociação.")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Valor total das renegociações", _brl(reneg["valor_total_parcelas"]))
-    c2.metric("Valor pago", _brl(reneg["valor_pago"]))
-    c3.metric("Saldo devedor", _brl(reneg["saldo_devedor"]))
-
-    # perfil_antes = resultados["renegociacao_perfil_antes"]
-    # if not perfil_antes.empty:
-    #     antes = perfil_antes.iloc[0]
-    #     st.markdown("**Perfil dos contratos antes da renegociação**")
-    #     c1, c2, c3 = st.columns(3)
-    #     c1.metric("Estavam em default", _pct(antes["pct_estavam_em_default"]))
-    #     c2.metric("Atraso médio (dias)", f"{antes['atraso_medio_dias']:.1f}")
-    #     c3.metric("Estavam em 90+ dias", _pct(antes["pct_max_delay_90mais"]))
-
-    # --- Mix por produto -----------------------------------------------------
-    # st.divider()
-    # st.subheader("🧾 Mix por produto")
-    # col_a, col_b = st.columns([1.3, 1])
-    # with col_a:
-    #     st.plotly_chart(build_mix_produto_chart(resultados["mix_produto"]), width="stretch")
-    # with col_b:
-    #     st.dataframe(
-    #         resultados["mix_produto"].style.format({"saldo_devedor": "{:,.2f}"}),
-    #         hide_index=True, width="stretch",
-    #     )
+    c1.metric("Valor total das renegociações", _brl(reneg["valor_total_parcelas"]), help="Soma do valor cheio das parcelas que resultaram das renegociações (a 'nova' dívida reestruturada).")
+    c2.metric("Valor pago", _brl(reneg["valor_pago"]), help="Soma do que já foi pago dessas parcelas renegociadas.")
+    c3.metric("Saldo devedor", _brl(reneg["saldo_devedor"]), help="Soma do que ainda está em aberto dessas parcelas renegociadas.")
 
     # --- NPL por faixa e aging -----------------------------------------------
     st.divider()
-    st.subheader("⚠️ NPL por faixa de atraso & Aging")
+    st.subheader(
+        "⚠️ NPL por faixa de atraso & Aging",
+        help="Ambos calculados sobre a carteira em aberto (exclui write-off) e SOBRE O SALDO DEVEDOR "
+        "(o que ainda falta pagar) — é aqui que o Painel usa o termo 'NPL', diferente da "
+        "'Inadimplência' usada no resto do Painel (Painel Executivo, Análise de Risco), que divide "
+        "pelo saldo TOTAL contratado (pago + em aberto). 'NPL por faixa': para cada corte (15/30/60/"
+        "90 dias), % do saldo devedor de contratos com atraso ≥ aquele corte (contrato inteiro entra "
+        "se qualquer parcela atingir o corte) ÷ saldo devedor total da carteira em aberto. 'Aging': % "
+        "do saldo devedor em cada faixa fixa de atraso (em dia, 1-30, 31-60, 61-90, 90+) — uma foto "
+        "da carteira hoje.",
+    )
     col_a, col_b = st.columns(2)
     with col_a:
         st.plotly_chart(build_npl_faixa_chart(resultados["npl_por_faixa"]), width="stretch")
@@ -266,26 +275,35 @@ def render_carteira():
 
     # --- Taxas-chave ----------------------------------------------------------
     st.divider()
-    st.subheader("📈 Taxas-chave")
+    st.subheader(
+        "📈 Taxas-chave",
+        help="Cinco taxas percentuais sobre a carteira do recorte — ver o help de cada uma para a "
+        "fórmula exata; repare que 'Write-off (contratos)' e 'Write-off (% saldo originado)' usam "
+        "critérios diferentes de write-off (ver help de cada uma).",
+    )
     default_fpd = resultados["default_fpd"].iloc[0]
     writeoff = resultados["writeoff"].iloc[0]
-    prepag = resultados["prepagamento_renovacao"].iloc[0]
     pct_renegociado = resultados['taxa_renegociados'].iloc[0]
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Taxa de default", _pct(default_fpd["taxa_default_contratos_pct"]))
-    c2.metric("First payment default", _pct(default_fpd["taxa_fpd_pct"]))
-    c3.metric("Write-off (contratos)", _pct(writeoff["pct_contratos_com_baixa"]))
-    c4.metric("Write-off (% saldo originado)", _pct(writeoff["pct_saldo_baixado_sobre_originado"]))
-    c5.metric("Taxa de renegociados", _pct(pct_renegociado["pct_renegociado"]))
-    # c5.metric("Pré-pagamento", _pct(prepag["taxa_prepagamento_contratos_pct"]))
-    # c6.metric("Renovação", _pct(prepag["taxa_renovacao_contratos_pct"]))
+    c1.metric("Taxa de default", _pct(default_fpd["taxa_default_contratos_pct"]), help="% de contratos marcados como em default no sistema de origem (flag bruto do banco).")
+    c2.metric("First payment default", _pct(default_fpd["taxa_fpd_pct"]), help="% de contratos marcados pelo sistema de origem com a flag 'primeira parcela em atraso' (campo firstPaymentDefault) — vem pronto do banco, não é recalculado aqui.")
+    c3.metric("Write-off (contratos)", _pct(writeoff["pct_contratos_com_baixa"]), help="% de contratos com alguma parcela sinalizada pelo flag bruto 'writeOff' do sistema de origem — população calculada de forma independente do corte de 360 dias, então pode divergir do indicador ao lado.")
+    c4.metric("Write-off (% saldo originado)", _pct(writeoff["pct_saldo_baixado_sobre_originado"]), help="% do valor originado que pertence a contratos com atraso ≥360 dias (corte padrão 'WO=360' do Painel) — critério diferente do flag bruto usado em 'Write-off (contratos)', os dois podem não bater.")
+    c5.metric("Taxa de renegociados", _pct(pct_renegociado["pct_renegociado"]), help="% de contratos-raiz do recorte que já foram renegociados ao menos uma vez.")
 
     # --- Curva de maturação por safra (vintage) ----------------------------------
     st.divider()
-    st.subheader("📅 Curva de maturação por safra")
+    st.subheader(
+        "📅 Curva de maturação por safra",
+        help="Para cada combinação safra x idade (meses desde a originação), reconstrói parcela a "
+        "parcela qual seria o atraso de cada contrato naquele momento do passado (usando dueDate/"
+        "paymentDate reais). % NPL da safra na idade X = (saldo em aberto de contratos com atraso "
+        "≥90d naquela idade) ÷ (valor total originado pela safra, fixo). O denominador não muda com "
+        "o tempo; o numerador usa o saldo que estava de fato em aberto naquele momento passado.",
+    )
     st.caption(
-        "% do valor originado em NPL90+ por idade da safra (meses desde a originação) — "
+        "% do valor originado em inadimplência 90+ por idade da safra (meses desde a originação) — "
         "reconstruída mês a mês a partir de dueDate/paymentDate, permitindo comparar safras "
         "na mesma idade de vida."
     )
@@ -296,8 +314,10 @@ def render_carteira():
         with tab_mapa:
             st.caption(
                 "Cada linha é uma safra e cada coluna é a idade dela em meses. A cor mostra o "
-                "% de NPL90+ naquele momento — mais vermelho = pior. Dá pra ler na horizontal "
-                "(como uma safra evolui com a idade) ou na vertical (comparar safras na mesma idade)."
+                "% de inadimplência 90+ naquele momento — verde até 20%, amarelo a partir de 20%, "
+                "vermelho a partir de 40%, vermelho bem escuro perto de 100% (escala fixa, não muda "
+                "com o filtro). Dá pra ler na horizontal (como uma safra evolui com a idade) ou na "
+                "vertical (comparar safras na mesma idade)."
             )
             st.plotly_chart(build_curva_maturacao_heatmap(curva), width="stretch")
 
@@ -324,7 +344,13 @@ def render_carteira():
 
     # --- Matriz de rolagem (roll-rate) --------------------------------------------
     st.divider()
-    st.subheader("🔀 Matriz de rolagem (roll-rate)")
+    st.subheader(
+        "🔀 Matriz de rolagem (roll-rate)",
+        help="Usando a mesma reconstrução mês a mês da curva de maturação, identifica em qual faixa "
+        "de atraso cada contrato estava em cada mês e para qual faixa foi no mês seguinte. Agrega "
+        "todas as transições do histórico: para cada faixa de origem (linha), % de contratos que foi "
+        "para cada faixa de destino (coluna). A diagonal mostra quem ficou estável.",
+    )
     st.caption(
         "Transição mês a mês entre faixas de atraso, agregada ao longo de todo o histórico: "
         "de cada bucket em que o contrato estava, para qual bucket foi no mês seguinte."
@@ -339,22 +365,33 @@ def render_carteira():
 
     # --- Rentabilidade ----------------------------------------------------------
     st.divider()
-    st.subheader("💰 Rentabilidade")
+    st.subheader(
+        "💰 Rentabilidade",
+        help="Indicadores de retorno da carteira do recorte, incluindo write-off e quitados (não é "
+        "restrito à carteira em aberto).",
+    )
     rent = resultados["rentabilidade"].iloc[0]
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Yield médio mensal", _pct(rent["yield_medio_mensal_ponderado_pct"]))
-    c2.metric("Yield médio anual", _pct(rent["yield_medio_anual_ponderado_pct"]))
-    c3.metric("Receita total", _brl(rent["receita_total"]))
-    c4.metric("Receita originação", _brl(rent["receita_originacao"]))
-    c5.metric("Receita tesouraria", _brl(rent["receita_tesouraria"]))
+    c1.metric("Yield médio mensal", _pct(rent["yield_medio_mensal_ponderado_pct"]), help="Taxa de juros mensal contratada, ponderada pelo saldo devedor atual de cada contrato (contratos com mais saldo em aberto pesam mais na média).")
+    c2.metric("Yield médio anual", _pct(rent["yield_medio_anual_ponderado_pct"]), help="Mesma lógica do yield mensal, usando a taxa de juros anual contratada, ponderada pelo saldo devedor.")
+    c3.metric("Receita total", _brl(rent["receita_total"]), help="Soma da receita total apurada nos contratos do recorte (originação + tesouraria).")
+    c4.metric("Receita originação", _brl(rent["receita_originacao"]), help="Parcela da receita total atribuída à originação do crédito.")
+    c5.metric("Receita tesouraria", _brl(rent["receita_tesouraria"]), help="Parcela da receita total atribuída à tesouraria.")
 
     # --- Concentração (HHI) ------------------------------------------------------
     st.divider()
-    st.subheader("🎯 Concentração de carteira (cliente)")
+    st.subheader(
+        "🎯 Concentração de carteira (cliente)",
+        help="Mede o quanto a carteira (contratos com saldo devedor em aberto, o que inclui "
+        "write-off — não é o mesmo recorte de 'Carteira em aberto' das outras seções) depende de "
+        "poucos clientes grandes, usando o Índice Herfindahl-Hirschman (HHI): soma do quadrado da "
+        "participação % de cada cliente (CPF/CNPJ, campo taxId) no saldo devedor total. Varia de "
+        "perto de 0 (muito pulverizada) a 10.000 (um único cliente concentra tudo).",
+    )
     hhi_resumo = resultados["concentracao_cliente_resumo"].iloc[0]
     c1, c2 = st.columns(2)
-    c1.metric("HHI", f"{hhi_resumo['HHI']:.1f}")
-    c2.metric("% saldo no top 10 clientes", _pct(hhi_resumo["pct_saldo_top10"]))
+    c1.metric("HHI", f"{hhi_resumo['HHI']:.1f}", help="Soma do quadrado da participação % de cada cliente no saldo devedor com saldo em aberto (inclui write-off). Quanto maior, mais concentrada.")
+    c2.metric("% saldo no top 10 clientes", _pct(hhi_resumo["pct_saldo_top10"]), help="Soma da participação % dos 10 clientes com maior saldo devedor sobre o saldo devedor total.")
     with st.expander("Ver top 15 clientes por concentração de saldo", expanded=False):
         st.plotly_chart(
             build_concentracao_chart(resultados["concentracao_cliente_top15"], "taxId"),
@@ -364,31 +401,57 @@ def render_carteira():
 
     # --- Perfil de risco do cliente ------------------------------------------------
     st.divider()
-    st.subheader("🧑‍💼 Perfil de risco do cliente (CCB)")
+    st.subheader(
+        "🧑‍💼 Perfil de risco do cliente",
+        help="NPL 90+ (sobre o SALDO DEVEDOR, não o saldo total contratado — mesma metodologia do "
+        "'NPL por faixa de atraso' acima, diferente da 'Inadimplência' do resto do Painel) "
+        "segmentado por rating, estado (UF) e setor (CNAE) do cliente — só para contratos CCB, "
+        "cruzados com os dados cadastrais de client_data. Exclui write-off (atraso ≥360 dias), igual "
+        "ao 'NPL por faixa de atraso' acima, para os dois números serem comparáveis.",
+    )
     with st.expander("NPL 90+ por rating", expanded=False):
+        st.caption(
+            "% NPL90+ = saldo devedor dos contratos daquele rating com atraso ≥90 dias ÷ saldo "
+            "devedor total do rating (contratos em write-off excluídos). Campos: rating_v4 (client_data) "
+            "e max_delay/saldo_atual (installments)."
+        )
         st.plotly_chart(
             build_npl_por_dimensao_chart(resultados["npl_por_rating"], "rating_v4", "NPL 90+ por rating"),
             width="stretch",
         )
         st.dataframe(resultados["npl_por_rating"], hide_index=True, width="stretch")
     with st.expander("NPL 90+ por estado (UF)", expanded=False):
+        st.caption(
+            "Mesma fórmula do NPL 90+ por rating, agrupando por estado (UF) do cliente em vez de "
+            "rating. Campo: state (client_data)."
+        )
         st.plotly_chart(
             build_npl_por_dimensao_chart(resultados["npl_por_estado"], "state", "NPL 90+ por estado"),
             width="stretch",
         )
         st.dataframe(resultados["npl_por_estado"], hide_index=True, width="stretch")
     with st.expander("NPL 90+ por setor (CNAE)", expanded=False):
+        st.caption(
+            "Mesma fórmula do NPL 90+ por rating, agrupando pelo setor de atividade (CNAE) do "
+            "cliente. Campo: cnaeFiltered (client_data)."
+        )
         st.plotly_chart(
             build_npl_por_dimensao_chart(resultados["npl_por_setor"], "cnaeFiltered", "NPL 90+ por setor"),
             width="stretch",
         )
         st.dataframe(resultados["npl_por_setor"], hide_index=True, width="stretch")
 
-    restritivos = resultados["restricoes_cadastrais"].iloc[0]
-    st.markdown("**Restrições cadastrais**")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Protesto", _pct(restritivos["pct_clientes_com_protesto"]))
-    c2.metric("Restritivo nacional", _pct(restritivos["pct_clientes_restritivo_nacional"]))
-    c3.metric("PEP", _pct(restritivos["pct_clientes_pep"]))
-    c4.metric("Mandado de prisão", _pct(restritivos["pct_clientes_mandado_prisao"]))
-    c5.metric("Trabalho escravo", _pct(restritivos["pct_clientes_trabalho_escravo"]))
+    # restritivos = resultados["restricoes_cadastrais"].iloc[0]
+    # st.markdown("**Restrições cadastrais**")
+    # c1, c2, c3, c4, c5 = st.columns(5)
+    # c1.metric("Protesto", _pct(restritivos["pct_clientes_com_protesto"]))
+    # c2.metric("Restritivo nacional", _pct(restritivos["pct_clientes_restritivo_nacional"]))
+    # c3.metric("PEP", _pct(restritivos["pct_clientes_pep"]))
+    # c4.metric("Mandado de prisão", _pct(restritivos["pct_clientes_mandado_prisao"]))
+    # c5.metric("Trabalho escravo", _pct(restritivos["pct_clientes_trabalho_escravo"]))
+
+
+def render_carteira():
+    """Roda em `st.fragment`: mexer em qualquer filtro (cabeçalho ou meio
+    da aba) só reprocessa esta aba, sem esmaecer o app inteiro."""
+    _render_carteira_body()

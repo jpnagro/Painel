@@ -1,7 +1,14 @@
 """Agente do "Chat AI": monta o prompt (com a documentação do Painel
 embutida), expõe as ferramentas de `crud.chat_ai.data` como function-calling
 da OpenAI, e roda o loop de pergunta -> (chamadas de ferramenta)* -> resposta
-final."""
+final.
+
+Usa a Responses API (`client.responses.create`), não a Chat Completions
+(`client.chat.completions.create`): modelos de raciocínio mais novos da
+família GPT-5.x (ex.: variantes "sol") retornam erro ao combinar function
+tools com `reasoning_effort` em /v1/chat/completions -- a própria OpenAI
+recomenda usar /v1/responses nesse caso, que suporta as duas coisas juntas
+e funciona também com os modelos mais simples (mini/terra etc.)."""
 import json
 from pathlib import Path
 
@@ -11,7 +18,7 @@ from core.config import OPENAI_API_KEY
 from crud.analise_risco.data import VARIAVEIS
 from crud.chat_ai import data as ferramentas_dados
 
-MODEL = "gpt-5.4-mini"
+MODEL = "gpt-5.6-sol"
 MAX_ITERACOES = 6
 
 # app/crud/chat_ai/agent.py -> parents[3] = raiz do repositório (onde está
@@ -55,7 +62,7 @@ entender a carteira de crédito, os indicadores do Painel, ou tirar dúvidas sob
    seja genuinamente impossível de responder sem mais contexto.
 6. Nunca invente números. Se uma ferramenta falhar ou não tiver o dado, diga isso claramente e sugira
    um caminho (outra ferramenta, ou reformular a pergunta).
-7. Responda sempre em português, em tom direto e objetivo, adequado para uso interno da empresa.
+7. ATENÇÃO: Responda sempre em português, em tom **DIRETO e OBJETIVO**, adequado para uso interno da empresa.
 
 # Variáveis de perfil disponíveis na Análise de Risco (parâmetro `variavel` das ferramentas de risco)
 {", ".join(sorted(VARIAVEIS))}
@@ -75,191 +82,171 @@ SYSTEM_PROMPT = _montar_system_prompt()
 TOOLS = [
     {
         "type": "function",
-        "function": {
-            "name": "relatorio_analise_carteira",
-            "description": (
-                "Indicadores completos da aba 'Análise da Carteira': resumo Total/Em aberto/WriteOff, "
-                "NPL por faixa de atraso, aging, taxas-chave, rentabilidade e concentração (HHI)."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "produtos": {
-                        "type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]},
-                        "description": "Produtos a incluir. Padrão: os dois (CCB e CPR).",
-                    },
-                    "tipo_operacao_ccb": {
-                        "type": "array", "items": {"type": "string"},
-                        "description": "Filtro opcional de 'App'/'Crédito Produtor' dentro de CCB.",
-                    },
-                    "tipo_produto_cpr": {
-                        "type": "array", "items": {"type": "string"},
-                        "description": "Filtro opcional por tipo de produto CPR.",
-                    },
+        "name": "relatorio_analise_carteira",
+        "description": (
+            "Indicadores completos da aba 'Análise da Carteira': resumo Total/Em aberto/WriteOff, "
+            "NPL por faixa de atraso, aging, taxas-chave, rentabilidade e concentração (HHI)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "produtos": {
+                    "type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]},
+                    "description": "Produtos a incluir. Padrão: os dois (CCB e CPR).",
+                },
+                "tipo_operacao_ccb": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Filtro opcional de 'App'/'Crédito Produtor' dentro de CCB.",
+                },
+                "tipo_produto_cpr": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Filtro opcional por tipo de produto CPR.",
                 },
             },
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "relatorio_painel_executivo",
-            "description": (
-                "Indicadores completos da aba 'Painel Executivo' (visão geral, risco por faixa de "
-                "atraso e financeiro/PDD/margem) pra um Produto e uma Carteira, no Total e por categoria."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "produto": {"type": "string", "enum": ["CCB", "CPR"], "description": "Padrão: CCB."},
-                    "carteira": {
-                        "type": "string",
-                        "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
-                        "description": "Padrão: 'Carteira em aberto'.",
-                    },
+        "name": "relatorio_painel_executivo",
+        "description": (
+            "Indicadores completos da aba 'Painel Executivo' (visão geral, risco por faixa de "
+            "atraso e financeiro/PDD/margem) pra um Produto e uma Carteira, no Total e por categoria."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "produto": {"type": "string", "enum": ["CCB", "CPR"], "description": "Padrão: CCB."},
+                "carteira": {
+                    "type": "string",
+                    "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
+                    "description": "Padrão: 'Carteira em aberto'.",
                 },
             },
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "relatorio_risco_por_variavel",
-            "description": (
-                "Inadimplência (NPL 90+) segmentada por uma variável de perfil do cliente/operação "
-                "(Rating, UF, Setor, Faixa de Renda, Tempo de Atividade, Faixa de Ticket, Categoria) — "
-                "mesma fórmula usada no Painel Executivo."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "variavel": {
-                        "type": "string", "enum": sorted(VARIAVEIS),
-                        "description": "Qual variável de perfil analisar.",
-                    },
-                    "carteira": {
-                        "type": "string",
-                        "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
-                    },
-                    "produtos": {"type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]}},
-                    "tipo_operacao_ccb": {"type": "array", "items": {"type": "string"}},
-                    "tipo_produto_cpr": {"type": "array", "items": {"type": "string"}},
-                    "min_contratos": {
-                        "type": "integer",
-                        "description": "Categorias com menos contratos que isso são descartadas. Padrão: 5.",
-                    },
+        "name": "relatorio_risco_por_variavel",
+        "description": (
+            "Inadimplência (NPL 90+) segmentada por uma variável de perfil do cliente/operação "
+            "(Rating, UF, Setor, Faixa de Renda, Tempo de Atividade, Faixa de Ticket, Categoria) — "
+            "mesma fórmula usada no Painel Executivo."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "variavel": {
+                    "type": "string", "enum": sorted(VARIAVEIS),
+                    "description": "Qual variável de perfil analisar.",
                 },
-                "required": ["variavel"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "relatorio_ranking_dispersao",
-            "description": (
-                "Ranking de quais variáveis de perfil mais separam bom de mau pagador (maior dispersão "
-                "de % NPL90+ entre suas categorias) — pra apoiar decisões de política de crédito."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "carteira": {
-                        "type": "string",
-                        "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
-                    },
-                    "produtos": {"type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]}},
-                    "min_contratos": {"type": "integer"},
+                "carteira": {
+                    "type": "string",
+                    "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
+                },
+                "produtos": {"type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]}},
+                "tipo_operacao_ccb": {"type": "array", "items": {"type": "string"}},
+                "tipo_produto_cpr": {"type": "array", "items": {"type": "string"}},
+                "min_contratos": {
+                    "type": "integer",
+                    "description": "Categorias com menos contratos que isso são descartadas. Padrão: 5.",
                 },
             },
+            "required": ["variavel"],
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "relatorio_monitoramento_clientes",
-            "description": (
-                "Cobertura de monitoramento e watchlist de contratos com indicadores de risco piorando "
-                "(rating, dívidas/atraso externos, protestos), ordenados por severidade. Sem filtro de "
-                "carteira/produto/período — olha todo o universo monitorado."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "min_indicadores": {
-                        "type": "integer",
-                        "description": "Mínimo de indicadores piorando pra entrar na watchlist. Padrão: 1.",
-                    },
-                    "limite": {"type": "integer", "description": "Máx. de contratos retornados. Padrão: 30."},
+        "name": "relatorio_ranking_dispersao",
+        "description": (
+            "Ranking de quais variáveis de perfil mais separam bom de mau pagador (maior dispersão "
+            "de % NPL90+ entre suas categorias) — pra apoiar decisões de política de crédito."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "carteira": {
+                    "type": "string",
+                    "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],
                 },
+                "produtos": {"type": "array", "items": {"type": "string", "enum": ["CCB", "CPR"]}},
+                "min_contratos": {"type": "integer"},
             },
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "relatorio_estabilidade_rating",
-            "description": (
-                "PSI e KS1 por safra mensal (a partir de jul/2025) comparando a distribuição de RATING "
-                "de cada mês contra a safra de referência de jun/2025, com dados do CRM/HubSpot."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "relatorio_monitoramento_modelo",
-            "description": (
-                "KS, Gini e PSI do MODELO de score v4 (diferente do PSI/KS1 de Estabilidade Rating), "
-                "comparando a base de treino/teste com a carteira em produção numa janela de datas."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "data_inicio": {"type": "string", "description": "Formato AAAA-MM-DD. Opcional."},
-                    "data_fim": {"type": "string", "description": "Formato AAAA-MM-DD. Opcional."},
+        "name": "relatorio_monitoramento_clientes",
+        "description": (
+            "Cobertura de monitoramento e watchlist de contratos com indicadores de risco piorando "
+            "(rating, dívidas/atraso externos, protestos), ordenados por severidade. Sem filtro de "
+            "carteira/produto/período — olha todo o universo monitorado."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "min_indicadores": {
+                    "type": "integer",
+                    "description": "Mínimo de indicadores piorando pra entrar na watchlist. Padrão: 1.",
                 },
+                "limite": {"type": "integer", "description": "Máx. de contratos retornados. Padrão: 30."},
             },
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "listar_tabelas_disponiveis",
-            "description": "Lista as tabelas do banco SGC que podem ser consultadas via SQL.",
-            "parameters": {"type": "object", "properties": {}},
-        },
+        "name": "relatorio_estabilidade_rating",
+        "description": (
+            "PSI e KS1 por safra mensal (a partir de jul/2025) comparando a distribuição de RATING "
+            "de cada mês contra a safra de referência de jun/2025, com dados do CRM/HubSpot."
+        ),
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "type": "function",
-        "function": {
-            "name": "descrever_tabela",
-            "description": "Lista as colunas (nome + tipo) de uma tabela permitida do banco SGC.",
-            "parameters": {
-                "type": "object",
-                "properties": {"nome_tabela": {"type": "string"}},
-                "required": ["nome_tabela"],
+        "name": "relatorio_monitoramento_modelo",
+        "description": (
+            "KS, Gini e PSI do MODELO de score v4 (diferente do PSI/KS1 de Estabilidade Rating), "
+            "comparando a base de treino/teste com a carteira em produção numa janela de datas."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "data_inicio": {"type": "string", "description": "Formato AAAA-MM-DD. Opcional."},
+                "data_fim": {"type": "string", "description": "Formato AAAA-MM-DD. Opcional."},
             },
         },
     },
     {
         "type": "function",
-        "function": {
-            "name": "executar_sql_select",
-            "description": (
-                "Executa uma query SQL somente-leitura (SELECT) contra o banco SGC, restrita às "
-                "tabelas de `listar_tabelas_disponiveis`. Use só quando os relatórios prontos não "
-                "cobrirem a pergunta."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sql": {"type": "string", "description": "Query SQL, começando com SELECT ou WITH."},
-                    "limite_linhas": {"type": "integer", "description": "Máx. de linhas retornadas. Padrão: 200."},
-                },
-                "required": ["sql"],
+        "name": "listar_tabelas_disponiveis",
+        "description": "Lista as tabelas do banco SGC que podem ser consultadas via SQL.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "descrever_tabela",
+        "description": "Lista as colunas (nome + tipo) de uma tabela permitida do banco SGC.",
+        "parameters": {
+            "type": "object",
+            "properties": {"nome_tabela": {"type": "string"}},
+            "required": ["nome_tabela"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "executar_sql_select",
+        "description": (
+            "Executa uma query SQL somente-leitura (SELECT) contra o banco SGC, restrita às "
+            "tabelas de `listar_tabelas_disponiveis`. Use só quando os relatórios prontos não "
+            "cobrirem a pergunta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "sql": {"type": "string", "description": "Query SQL, começando com SELECT ou WITH."},
+                "limite_linhas": {"type": "integer", "description": "Máx. de linhas retornadas. Padrão: 200."},
             },
+            "required": ["sql"],
         },
     },
 ]
@@ -321,49 +308,123 @@ def _serializar(resultado):
 
 def responder(historico):
     """`historico`: lista de mensagens [{"role": "user"/"assistant", "content": str}, ...],
-    já sem o system prompt (esta função adiciona). Devolve o texto da resposta final."""
+    já sem o system prompt (vai à parte, via `instructions`). Devolve o texto da resposta final.
+
+    Usa `client.responses.create` (não `client.chat.completions.create`): modelos de raciocínio
+    GPT-5.x mais novos recusam function tools + reasoning_effort em /v1/chat/completions, mas
+    aceitam em /v1/responses -- ver docstring do módulo."""
     if not OPENAI_API_KEY:
         return "⚠️ A variável OPENAI_API_KEY não está configurada — não é possível usar o Chat AI."
 
     cliente = OpenAI(api_key=OPENAI_API_KEY)
-    mensagens = [{"role": "system", "content": SYSTEM_PROMPT}] + list(historico)
+    entrada = [{"role": m["role"], "content": m["content"]} for m in historico]
 
     for _ in range(MAX_ITERACOES):
         try:
-            resposta = cliente.chat.completions.create(
-                model=MODEL, messages=mensagens, tools=TOOLS, tool_choice="auto",
+            resposta = cliente.responses.create(
+                model=MODEL, instructions=SYSTEM_PROMPT, input=entrada,
+                tools=TOOLS, tool_choice="auto",
             )
         except Exception as exc:
             return f"⚠️ Erro ao chamar a OpenAI: {exc}"
 
-        msg = resposta.choices[0].message
-        if not msg.tool_calls:
-            return msg.content or "(sem resposta)"
+        # Preserva o output do modelo (texto + chamadas de ferramenta) no
+        # histórico de entrada, exatamente como a Responses API espera pra
+        # dar continuidade à conversa na próxima chamada.
+        entrada += resposta.output
 
-        mensagens.append({
-            "role": "assistant",
-            "content": msg.content,
-            "tool_calls": [
-                {
-                    "id": tc.id, "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in msg.tool_calls
-            ],
-        })
+        chamadas = [item for item in resposta.output if item.type == "function_call"]
+        if not chamadas:
+            return resposta.output_text or "(sem resposta)"
 
-        for tc in msg.tool_calls:
-            nome = tc.function.name
+        for chamada in chamadas:
             try:
-                argumentos = json.loads(tc.function.arguments or "{}")
+                argumentos = json.loads(chamada.arguments or "{}")
             except json.JSONDecodeError:
                 argumentos = {}
             try:
-                resultado = _executar_ferramenta(nome, argumentos)
+                resultado = _executar_ferramenta(chamada.name, argumentos)
             except Exception as exc:
                 resultado = {"erro": str(exc)}
-            mensagens.append({
-                "role": "tool", "tool_call_id": tc.id, "content": _serializar(resultado),
+            entrada.append({
+                "type": "function_call_output",
+                "call_id": chamada.call_id,
+                "output": _serializar(resultado),
             })
 
     return "Não consegui concluir a resposta em tempo hábil — tente reformular ou dividir a pergunta."
+
+
+def responder_stream(historico):
+    """Igual a `responder`, mas GERADOR: usa `stream=True` e vai produzindo
+    (yield) pedacinhos de texto conforme a OpenAI os envia -- pra usar com
+    `st.write_stream()` e a resposta aparecer sendo "digitada", igual no
+    ChatGPT web, em vez de aparecer inteira de uma vez.
+
+    Chamadas de ferramenta continuam acontecendo por baixo dos panos entre
+    uma rodada e outra (não têm texto pra transmitir); só o texto da
+    resposta final é streamado de fato. `st.write_stream` concatena tudo
+    que for gerado aqui e devolve o texto completo no final, que a view
+    salva no histórico normalmente."""
+    if not OPENAI_API_KEY:
+        yield "⚠️ A variável OPENAI_API_KEY não está configurada — não é possível usar o Chat AI."
+        return
+
+    cliente = OpenAI(api_key=OPENAI_API_KEY)
+    entrada = [{"role": m["role"], "content": m["content"]} for m in historico]
+
+    for _ in range(MAX_ITERACOES):
+        try:
+            stream = cliente.responses.create(
+                model=MODEL, instructions=SYSTEM_PROMPT, input=entrada,
+                tools=TOOLS, tool_choice="auto", stream=True,
+            )
+        except Exception as exc:
+            yield f"⚠️ Erro ao chamar a OpenAI: {exc}"
+            return
+
+        resposta_final = None
+        try:
+            for evento in stream:
+                if evento.type == "response.output_text.delta":
+                    yield evento.delta
+                elif evento.type == "response.completed":
+                    resposta_final = evento.response
+                elif evento.type == "error":
+                    yield f"\n⚠️ Erro da OpenAI durante o streaming: {getattr(evento, 'message', evento)}"
+                    return
+        except Exception as exc:
+            yield f"\n⚠️ Erro ao processar o streaming da OpenAI: {exc}"
+            return
+
+        if resposta_final is None:
+            yield "\n⚠️ Não recebi a confirmação de conclusão da resposta pela OpenAI."
+            return
+
+        # Mesma lógica de `responder`: guarda o output (texto + eventuais
+        # chamadas de ferramenta) e, se houver chamada de ferramenta,
+        # executa e faz mais uma rodada -- só que aqui a rodada final
+        # transmite o texto aos poucos em vez de devolver tudo de uma vez.
+        entrada += resposta_final.output
+        chamadas = [item for item in resposta_final.output if item.type == "function_call"]
+        if not chamadas:
+            if not (resposta_final.output_text or "").strip():
+                yield "(sem resposta)"
+            return
+
+        for chamada in chamadas:
+            try:
+                argumentos = json.loads(chamada.arguments or "{}")
+            except json.JSONDecodeError:
+                argumentos = {}
+            try:
+                resultado = _executar_ferramenta(chamada.name, argumentos)
+            except Exception as exc:
+                resultado = {"erro": str(exc)}
+            entrada.append({
+                "type": "function_call_output",
+                "call_id": chamada.call_id,
+                "output": _serializar(resultado),
+            })
+
+    yield "\nNão consegui concluir a resposta em tempo hábil — tente reformular ou dividir a pergunta."

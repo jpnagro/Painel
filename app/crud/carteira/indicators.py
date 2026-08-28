@@ -487,14 +487,21 @@ def concentracao_hhi(contratos_ativos, estado, coluna):
     return resumo, detalhe
 
 
-def perfil_risco_cliente(contratos_ativos, estado, client):
+def perfil_risco_cliente(contratos_ativos, estado, client, wo=360):
     """Cruza NPL90+ com atributos cadastrais do cliente (rating, score,
     setor/CNAE, estado, restrições) para os contratos CCB, que têm chave
-    exata com client_data (ccbCode = operationCode)."""
+    exata com client_data (ccbCode = operationCode).
+
+    Usa o mesmo universo de `npl_por_faixa` (saldo_atual > 0 e max_delay <
+    wo) — sem esse segundo filtro, os contratos em write-off (max_delay >=
+    360, sempre 100% NPL90+ por definição) entravam no numerador E no
+    denominador de cada categoria, inflando o NPL90+ por Rating/UF/CNAE
+    acima do NPL90+ geral, que exclui write-off por ser reportado à parte."""
 
     com_cliente = juntar_client_data(contratos_ativos, client)
     com_cliente = com_cliente.merge(estado, on="operationCode", how="left")
     com_cliente = com_cliente[com_cliente["saldo_atual"] > 0]
+    com_cliente = com_cliente[com_cliente["max_delay"] < wo]
 
     def resumo_por(col):
         if com_cliente.empty:

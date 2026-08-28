@@ -1,7 +1,7 @@
 import streamlit as st
 
 from core.config import OPENAI_API_KEY
-from crud.chat_ai.agent import responder
+from crud.chat_ai.agent import responder_stream
 
 CHAVE_HISTORICO = "chat_ai_historico"
 
@@ -38,12 +38,12 @@ def _area_chat():
             st.session_state[CHAVE_HISTORICO] = []
             st.rerun(scope="fragment")
 
-    if not st.session_state[CHAVE_HISTORICO]:
-        st.info(
-            "Pergunte, por exemplo: \"Qual o saldo devedor da carteira em aberto hoje?\", "
-            "\"Quais estados têm maior inadimplência 90+?\" ou \"Como é calculado o PSI da "
-            "Estabilidade Rating?\"."
-        )
+    # if not st.session_state[CHAVE_HISTORICO]:
+    #     st.info(
+    #         "Pergunte, por exemplo: \"Qual o saldo devedor da carteira em aberto hoje?\", "
+    #         "\"Quais estados têm maior inadimplência 90+?\" ou \"Como é calculado o PSI da "
+    #         "Estabilidade Rating?\"."
+    #     )
 
     historico = st.container(height=520)
     for msg in st.session_state[CHAVE_HISTORICO]:
@@ -57,19 +57,17 @@ def _area_chat():
             st.markdown(pergunta)
 
         with historico.chat_message("assistant"):
-            with st.spinner("Consultando dados e pensando..."):
-                resposta = responder(st.session_state[CHAVE_HISTORICO])
-            st.markdown(resposta)
+            # `write_stream` consome o gerador e vai desenhando o texto aos poucos
+            # (efeito "letra por letra"); as chamadas de ferramenta acontecem por
+            # baixo dos panos entre um trecho de texto e outro, sem UI própria.
+            resposta = st.write_stream(responder_stream(st.session_state[CHAVE_HISTORICO]))
         st.session_state[CHAVE_HISTORICO].append({"role": "assistant", "content": resposta})
 
 
 def render_chat_ai():
     st.title("🤖 Chat AI")
     st.caption(
-        "Converse com um assistente que conhece a metodologia de todos os indicadores do Painel "
-        "(documentacao_indicadores.md) e pode consultar tanto as tabelas já calculadas em cada aba "
-        "(reaproveitando o cache do app, sem repetir consulta ao banco) quanto o banco de dados SGC "
-        "diretamente, em modo somente leitura, quando a pergunta não estiver coberta pelo relatório."
+        "Converse com um assistente que conhece a metodologia de todos os indicadores do Painel e do banco de dados SGC."
     )
     st.markdown(_CSS_CHAT_FIXO, unsafe_allow_html=True)
 

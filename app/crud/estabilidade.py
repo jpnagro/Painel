@@ -103,7 +103,8 @@ def style_table(table):
     )
 
 
-def render_estabilidade():
+@st.fragment
+def _render_estabilidade_body():
     st.title("Análise de Estabilidade — Rating Nagro 4.0")
     st.caption(
         "PSI (Population Stability Index) e KS1, comparando a distribuição de rating de cada safra "
@@ -161,6 +162,11 @@ def render_estabilidade():
         st.stop()
 
     with st.expander("Safra de referência — Jun/25", expanded=False):
+        st.caption(
+            "Base fixa contra a qual todas as safras seguintes são comparadas. 'Qtde' = nº de deals "
+            "com aquele rating em junho/2025 (fonte: CSV do HubSpot). '% Part.' = Qtde ÷ total da "
+            "safra. '% Acum.' = soma das participações do melhor rating (AA) até aquela linha."
+        )
         ref_display = pd.DataFrame({
             "Rating": CATEGORIES,
             "Qtde": ref_qtde.values,
@@ -198,7 +204,14 @@ def render_estabilidade():
             "Status KS1": status_ks,
         })
 
-    st.subheader("Resumo por safra")
+    st.subheader(
+        "Resumo por safra",
+        help="Uma linha por mês (a partir de jul/2025), comparando a distribuição de rating daquele "
+        "mês contra a safra de referência (jun/2025). PSI = soma, em todos os ratings, de "
+        "(%participação referência − %participação do mês) × ln(%ref ÷ %mês) — mede se a 'forma' da "
+        "distribuição mudou. KS1 = maior diferença absoluta entre o % acumulado da referência e o do "
+        "mês, olhando rating a rating. Status 'Atenção' quando PSI ou KS1 ≥ 0,10 (10%).",
+    )
     summary_df = pd.DataFrame(summary_rows)
     st.dataframe(
         summary_df.style.format({"Qtde": "{:,.0f}", "PSI": "{:.4f}", "KS1": "{:.4f}"}),
@@ -207,7 +220,12 @@ def render_estabilidade():
     )
 
     st.divider()
-    st.subheader("Tabelas detalhadas por safra")
+    st.subheader(
+        "Tabelas detalhadas por safra",
+        help="Abra um mês para ver a comparação rating a rating contra a referência: quantidade, % "
+        "de participação e % acumulado do mês lado a lado com os da referência, e a contribuição de "
+        "PSI/KS1 de cada rating individual (não só o total).",
+    )
 
     for period in available_months:
         if period not in tables_by_month:
@@ -222,5 +240,19 @@ def render_estabilidade():
         with st.expander(f"{month_label(period)}  —  PSI: {total_psi:.4f} ({status_psi})  |  KS1: {total_ks:.4f} ({status_ks})", expanded=False):
             st.dataframe(style_table(table), hide_index=True, width="stretch")
             col1, col2 = st.columns(2)
-            col1.metric("Status PSI", status_psi, f"{total_psi:.4f}")
-            col2.metric("Status KS1", status_ks, f"{total_ks:.4f}")
+            col1.metric(
+                "Status PSI", status_psi, f"{total_psi:.4f}",
+                help="PSI do mês contra a safra de referência (jun/2025) — ver fórmula no cabeçalho "
+                "'Resumo por safra'. ≥ 0,10 dispara 'Atenção'.",
+            )
+            col2.metric(
+                "Status KS1", status_ks, f"{total_ks:.4f}",
+                help="KS1 do mês contra a safra de referência (jun/2025) — maior diferença absoluta "
+                "entre % acumulados, rating a rating. ≥ 0,10 dispara 'Atenção'.",
+            )
+
+
+def render_estabilidade():
+    """Roda em `st.fragment`: mexer em qualquer filtro/botão aqui só
+    reprocessa esta aba, sem esmaecer o app inteiro."""
+    _render_estabilidade_body()

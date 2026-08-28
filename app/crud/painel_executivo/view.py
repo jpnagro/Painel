@@ -41,15 +41,16 @@ def _pct(v):
     return f"{v:.2f}%"
 
 
-def _kpi_card(col, titulo, valor_total_fmt, partes_fmt):
+def _kpi_card(col, titulo, valor_total_fmt, partes_fmt, help=None):
     """`partes_fmt`: lista de strings já formatadas, uma por categoria
     (ex.: ["App: R$ 100", "Crédito Produtor: R$ 200"])."""
     with col:
-        st.metric(titulo, valor_total_fmt)
+        st.metric(titulo, valor_total_fmt, help=help)
         st.caption(" | ".join(partes_fmt))
 
 
-def render_painel_executivo():
+@st.fragment
+def _render_painel_executivo_body():
     st.title("📈 Painel Executivo")
     st.caption(
         "Nesta aba encontra-se indicadores gerais que podem ser filtrados por Produto e Carteira."
@@ -71,6 +72,9 @@ def render_painel_executivo():
         )
         carteira_selecionada = st.radio(
             "Carteira", options=CARTEIRAS, index=0, horizontal=True, key="exec_filtro_carteira",
+            help="'Carteira em aberto': exclui contratos já quitados e os em write-off (atraso ≥360 "
+            "dias). 'WriteOff': só os contratos em write-off. 'Carteira total': todos os contratos-"
+            "raiz do produto, sem excluir nada.",
         )
 
         # --- Período (só as datas, sem radio) — default cobre toda a
@@ -117,7 +121,12 @@ def render_painel_executivo():
 
     # --- Tópico 1: Painel Executivo -----------------------------------------
     st.divider()
-    st.subheader("1. Painel Executivo")
+    st.subheader(
+        "1. Painel Executivo",
+        help="KPIs principais do recorte atual (Produto/Carteira/Período selecionados no formulário "
+        "acima). Cada card mostra o valor Total em destaque e o detalhamento por categoria (App x "
+        "Crédito Produtor, ou tipos de CPR) logo abaixo.",
+    )
     n_por_cat = ", ".join(f"{cat}: {r['n_por_categoria'][cat]}" for cat in categorias)
     st.caption(
         f"{r['n_total']} contratos no recorte ({r['n_ccb']} CCB / {r['n_cpr']} CPR)."
@@ -137,21 +146,27 @@ def render_painel_executivo():
         c1, "Total Concedido",
         _brl(vg["Total"].loc["Valor Total Emprestado (R$)"].iloc[0]),
         _partes(vg, "Valor Total Emprestado (R$)"),
+        help="Soma do valor de principal dos contratos originais do recorte — renegociação nunca "
+        "conta como dinheiro novo concedido.",
     )
     _kpi_card(
         c2, "Contratos Ativos",
         f"{int(vg['Total'].loc['Contratos Ativos'].iloc[0]):,}",
         _partes(vg, "Contratos Ativos", formatter=lambda v: f"{int(v):,}"),
+        help="Contagem de contratos-raiz do recorte que ainda não foram 100% quitados.",
     )
     _kpi_card(
         c3, "Taxa Juros Média",
         _pct(vg["Total"].loc["Taxa de Juros Média (%)"].iloc[0]),
         _partes(vg, "Taxa de Juros Média (%)", formatter=_pct),
+        help="Taxa de juros mensal contratada, ponderada pelo valor de principal de cada contrato "
+        "(contratos maiores pesam mais na média).",
     )
     _kpi_card(
         c4, "Ticket Médio",
         _brl(vg["Total"].loc["Ticket Médio (R$)"].iloc[0]),
         _partes(vg, "Ticket Médio (R$)"),
+        help="Média simples do valor de principal por contrato do recorte.",
     )
 
     c5, c6, c7, c8 = st.columns(4)
@@ -159,26 +174,43 @@ def render_painel_executivo():
         c5, "FPD (90d)",
         _pct(risco["Total"].loc["FPD (90d)", "% da Carteira Total"]),
         _partes(risco, "FPD (90d)", coluna_por_cat="% da Carteira {cat}", formatter=_pct),
+        help="First Payment Default: fórmula canônica de '% da Carteira' — saldo das parcelas em "
+        "aberto de contratos cuja 1ª parcela já não foi paga em dia, ÷ SALDO TOTAL contratado do "
+        "recorte (pago + em aberto). É 'inadimplência', não 'NPL': o denominador é o total da "
+        "carteira, diferente do NPL calculado na aba 'Análise da Carteira' (que usa o saldo devedor).",
     )
     _kpi_card(
         c6, "Inadimplência 90d",
         _pct(risco["Total"].loc["90+ dias", "% da Carteira Total"]),
         _partes(risco, "90+ dias", coluna_por_cat="% da Carteira {cat}", formatter=_pct),
+        help="Fórmula canônica de '% da Carteira': saldo das parcelas em aberto de contratos com "
+        "atraso ≥90 dias ÷ SALDO TOTAL contratado (pago + em aberto) do recorte — mesmo número e "
+        "mesma fórmula usados em toda a Análise de Risco. Diferente do 'NPL 90+' calculado na aba "
+        "'Análise da Carteira', que divide pelo saldo devedor (só o que ainda falta pagar) em vez do "
+        "saldo total.",
     )
     _kpi_card(
         c7, "Cobertura PDD",
         _brl(fin["Total"].loc["PDD"].iloc[0]),
         _partes(fin, "PDD"),
+        help="Provisão para Devedores Duvidosos = 50% do saldo de principal em aberto dos contratos "
+        "com atraso ≥90 dias (ver 'Inadimplência 90+ Esperada' na tabela financeira abaixo).",
     )
     _kpi_card(
         c8, "Margem Financeira Estimada",
         _brl(fin["Total"].loc["Margem Financeira Bruta (Estimada)"].iloc[0]),
         _partes(fin, "Margem Financeira Bruta (Estimada)"),
+        help="Juros efetivamente pagos menos a provisão (PDD) — uma margem financeira bruta estimada "
+        "do recorte.",
     )
 
     if categorias:
         col_a, col_b = st.columns(2)
         with col_a:
+            st.caption(
+                "% do saldo a receber (parcelas em aberto, valor cheio) de cada categoria sobre o "
+                "total do recorte."
+            )
             st.plotly_chart(
                 build_donut_chart(
                     {cat: vg[cat].loc["Valor Total a Receber (R$)"].iloc[0] for cat in categorias},
@@ -187,6 +219,7 @@ def render_painel_executivo():
                 width="stretch",
             )
         with col_b:
+            st.caption("% do nº de contratos ainda não quitados de cada categoria sobre o total.")
             st.plotly_chart(
                 build_donut_chart(
                     {cat: vg[cat].loc["Contratos Ativos"].iloc[0] for cat in categorias},
@@ -194,11 +227,22 @@ def render_painel_executivo():
                 ),
                 width="stretch",
             )
+    st.caption(
+        "% da carteira (fórmula canônica: saldo em aberto ÷ SALDO TOTAL contratado — 'inadimplência', "
+        "não NPL sobre saldo devedor) em cada faixa de atraso (FPD, 15+, 30+, 60+, 90+ dias), "
+        "comparando o Total com cada categoria — quanto mais alta a barra, maior a fatia do total "
+        "contratado que já está naquele nível de atraso ou pior."
+    )
     st.plotly_chart(build_risco_bar_chart(risco), width="stretch")
 
     # --- Tópico 2: Composição da Carteira -----------------------------------
     st.divider()
-    st.subheader("2. Composição da Carteira")
+    st.subheader(
+        "2. Composição da Carteira",
+        help="10 indicadores de composição (contratos, clientes únicos, valor emprestado/a receber/"
+        "pago, taxa de juros média, ticket médio, contratos ativos, novos contratos no último mês e "
+        "valor desses novos contratos), lado a lado para o Total e cada categoria.",
+    )
     composicao = pd.concat([vg["Total"]] + [vg[cat] for cat in categorias], axis=1)
     st.dataframe(composicao.style.format("{:,.2f}"), width="stretch")
     if produto_selecionado == "CCB":
@@ -215,18 +259,44 @@ def render_painel_executivo():
 
     # --- Tópico 3: Indicadores de Risco e Financeiros -----------------------
     st.divider()
-    st.subheader("3. Indicadores de Risco e Financeiros")
-    st.markdown("**Indicadores de Risco**")
+    st.subheader(
+        "3. Indicadores de Risco e Financeiros",
+        help="Duas tabelas: 'Indicadores de Risco' mostra o saldo em atraso (R$) e o % da carteira "
+        "(fórmula canônica, sobre o saldo TOTAL contratado — é 'inadimplência', não 'NPL' sobre "
+        "saldo devedor) em cada faixa de atraso; 'Indicadores Financeiros' traz juros, saldo e "
+        "provisão — ver help de cada uma abaixo.",
+    )
+    st.markdown(
+        "**Indicadores de Risco**",
+        help="Para cada faixa de atraso (FPD 90d, 15+, 30+, 60+, 90+ dias): saldo em R$ das parcelas "
+        "em aberto de contratos naquela faixa, e % da carteira = esse saldo ÷ SALDO TOTAL contratado "
+        "(pago + em aberto) do recorte — a mesma fórmula canônica usada na Análise de Risco. Note que "
+        "é diferente do NPL calculado na aba 'Análise da Carteira', que usa o saldo devedor como "
+        "denominador em vez do saldo total.",
+    )
     risco_tabela = pd.concat([risco["Total"]] + [risco[cat] for cat in categorias], axis=1)
     st.dataframe(risco_tabela.style.format("{:,.2f}"), width="stretch")
 
-    st.markdown("**Indicadores Financeiros**")
+    st.markdown(
+        "**Indicadores Financeiros**",
+        help="Total de Juros (Contratada) = juros previstos em contrato. Juros Pagos = parte de "
+        "juros já recebida. % Juros Pagos = Juros Pagos ÷ Total de Juros. Saldo Devedor = principal "
+        "ainda em aberto. Inadimplência 90+ Esperada = saldo de PRINCIPAL (não parcela cheia) dos "
+        "contratos com atraso ≥90 dias. PDD = 50% da Inadimplência 90+ Esperada. Margem Financeira "
+        "Bruta (Estimada) = Juros Pagos − PDD.",
+    )
     fin_tabela = pd.concat([fin["Total"]] + [fin[cat] for cat in categorias], axis=1)
     st.dataframe(fin_tabela.style.format("{:,.2f}"), width="stretch")
 
     # --- Tópico 4: Análise por Safra ----------------------------------------
     st.divider()
-    st.subheader("4. Análise por Safra")
+    st.subheader(
+        "4. Análise por Safra",
+        help="Para cada mês de originação: quantidade de contratos, volume concedido, saldo devedor, "
+        "perda real aos 90 dias (saldo de principal efetivamente em atraso) e perda esperada (saldo "
+        "de principal dos contratos em atraso ≥90 dias), com as respectivas taxas em % do volume da "
+        "safra. Uma aba por categoria (App/Crédito Produtor ou tipo de CPR), além do Total.",
+    )
     labels_tabs = ["Total"] + categorias
     tabs = st.tabs(labels_tabs)
     for label, tab in zip(labels_tabs, tabs):
@@ -236,3 +306,9 @@ def render_painel_executivo():
             )
             with st.expander("Ver tabela"):
                 st.dataframe(r["safras"][label], width="stretch")
+
+
+def render_painel_executivo():
+    """Roda em `st.fragment`: mexer em qualquer filtro (cabeçalho ou meio
+    da aba) só reprocessa esta aba, sem esmaecer o app inteiro."""
+    _render_painel_executivo_body()
