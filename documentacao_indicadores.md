@@ -2,13 +2,18 @@
 
 Este documento explica, aba por aba, o que cada indicador e gráfico do Painel mostra e **exatamente como ele é calculado**. O objetivo é dar transparência total sobre a metodologia por trás dos números — de onde vêm os dados, quais filtros afetam cada cálculo e qual fórmula está por trás de cada métrica.
 
-**Última atualização:** 26/08/2026
+**Última atualização:** 27/08/2026
+
+> **Nota para o Agente de IA (Chat AI):** este documento é a fonte primária de metodologia usada pelo
+> agente para responder perguntas sobre o Painel. Sempre que uma pergunta envolver "inadimplência" ou
+> "NPL", verifique a seção 1.5 antes de responder — são DUAS fórmulas diferentes (denominadores
+> diferentes), e usar a errada produz um número que não bate com o que o usuário vê na tela.
 
 ---
 
 ## Sumário
 
-1. [Conceitos comuns a várias abas](#1-conceitos-comuns-a-várias-abas)
+1. [Conceitos comuns a várias abas](#1-conceitos-comuns-a-várias-abas) (destaque: 1.5 — NPL x Inadimplência)
 2. [Monitoramento do Modelo](#2-monitoramento-do-modelo)
    - 2.1 [Sub-aba Relatório](#21-sub-aba-relatório)
    - 2.2 [Sub-aba Estabilidade Rating](#22-sub-aba-estabilidade-rating)
@@ -24,7 +29,7 @@ Este documento explica, aba por aba, o que cada indicador e gráfico do Painel m
 
 ## 1. Conceitos comuns a várias abas
 
-Antes de entrar em cada aba, é importante entender quatro conceitos que se repetem em praticamente todo o Painel. Eles garantem que os números batam entre abas diferentes — não são regras isoladas de uma única tela.
+Antes de entrar em cada aba, é importante entender cinco conceitos que se repetem em praticamente todo o Painel. Eles garantem que os números batam entre abas diferentes — não são regras isoladas de uma única tela.
 
 ### 1.1 Consolidação de renegociações (a "raiz" do contrato)
 
@@ -42,19 +47,33 @@ O corte oficial de write-off usado nas abas "Análise da Carteira", "Painel Exec
 
 > **Write-off = contrato com atraso máximo (`max_delay`) igual ou superior a 360 dias em alguma parcela em aberto.**
 
-Esse critério (apelidado de `WO = 360` no código) é usado de forma consistente para separar "Carteira em aberto" de "WriteOff" nessas quatro abas. A única exceção documentada está na aba "Análise da Carteira", no indicador "Write-off (contratos)" das Taxas-chave, que usa um flag bruto do banco (`writeOff`) em vez do corte de 360 dias — isso está detalhado na seção 3.7.
+Esse critério (apelidado de `WO = 360` no código) é usado de forma consistente para separar "Carteira em aberto" de "WriteOff" nessas quatro abas. A única exceção documentada está na aba "Análise da Carteira", no indicador "Write-off (contratos)" das Taxas-chave (seção 3.4), que usa um flag bruto do banco (`writeOff`) em vez do corte de 360 dias.
 
-### 1.3 A fórmula canônica de "% da Carteira" (NPL 90+)
+### 1.3 A fórmula canônica de "% da Carteira" (Inadimplência 90+ — denominador = saldo TOTAL)
 
-Esta é a fórmula mais reaproveitada do Painel — aparece no Painel Executivo e em toda a Análise de Risco (inclusive no Simulador), sempre com o mesmo resultado para o mesmo recorte de dados:
+Esta é a fórmula mais reaproveitada do Painel — aparece no **Painel Executivo** e em toda a **Análise de Risco** (ranking de dispersão, inadimplência por variável, cruzamento e Simulador), sempre com o mesmo resultado para o mesmo recorte de dados. Nessas abas o Painel chama esse indicador de **"Inadimplência"**, nunca de "NPL" — ver a distinção completa na seção 1.5.
 
-> **% da Carteira (NPL 90+) = (soma do valor total das parcelas em aberto dos contratos com atraso ≥ 90 dias) ÷ (soma do valor total de todas as parcelas do recorte, pagas e em aberto) × 100**
+> **% da Carteira (Inadimplência 90+) = (soma do valor total das parcelas em aberto dos contratos com atraso ≥ 90 dias) ÷ (soma do valor total de TODAS as parcelas do recorte, pagas e em aberto) × 100**
 
-Em outras palavras: de tudo o que foi contratado (parcelas cheias, pagas ou não) dentro do filtro selecionado, que fatia pertence a contratos que já acumulam 90 dias ou mais de atraso em alguma parcela? O numerador olha só o saldo das parcelas ainda em aberto desses contratos ruins; o denominador é o total contratado de todo o grupo (bons e ruins). A mesma lógica se aplica às outras faixas de atraso (15, 30, 60 dias), trocando apenas o corte de dias.
+Em outras palavras: de tudo o que foi contratado (parcelas cheias, pagas ou não) dentro do filtro selecionado, que fatia pertence a contratos que já acumulam 90 dias ou mais de atraso em alguma parcela? O numerador olha só o saldo das parcelas ainda em aberto desses contratos ruins (campo `total_due_amount` das parcelas não pagas); o denominador é o **saldo total contratado** de todo o grupo, bons e ruins, pago e em aberto (campo `total_installment_amount`) — não é o saldo devedor remanescente. A mesma lógica se aplica às outras faixas de atraso (15, 30, 60 dias, e ao corte de "1ª parcela em atraso" usado no FPD), trocando apenas o corte de dias/condição.
 
-### 1.4 Nível do NPL: contrato inteiro, não parcela isolada
+### 1.4 Nível do NPL/Inadimplência: contrato inteiro, não parcela isolada
 
-Quando um contrato atinge o corte de atraso de uma faixa (por exemplo, 90 dias) em **qualquer uma** de suas parcelas em aberto, o Painel considera o **contrato inteiro** como parte daquela faixa de risco — não apenas a parcela atrasada. Essa é a metodologia padrão de mercado: uma parcela em atraso "contamina" a leitura de risco do contrato como um todo.
+Quando um contrato atinge o corte de atraso de uma faixa (por exemplo, 90 dias) em **qualquer uma** de suas parcelas em aberto, o Painel considera o **contrato inteiro** como parte daquela faixa de risco — não apenas a parcela atrasada. Essa é a metodologia padrão de mercado: uma parcela em atraso "contamina" a leitura de risco do contrato como um todo. Essa regra vale tanto para o NPL (seção 1.5) quanto para a Inadimplência (seção 1.3).
+
+### 1.5 NPL (saldo devedor) x Inadimplência / "% da Carteira" (saldo total) — não confundir
+
+O Painel usa **dois termos diferentes de propósito**, com **denominadores diferentes**, para a mesma ideia geral de "contratos em atraso". Confundir os dois produz números que parecem incoerentes entre abas, mas na verdade estão corretos — são só perguntas diferentes:
+
+| | **NPL** | **Inadimplência / "% da Carteira"** |
+|---|---|---|
+| Onde aparece | Só na aba "Análise da Carteira": "NPL por faixa de atraso & Aging" (3.3) e "Perfil de risco do cliente" (3.9) | Painel Executivo (4.1, 4.3, 4.4) e toda a Análise de Risco (5.1, 5.2) |
+| Denominador | **Saldo devedor** do grupo — só o que ainda falta pagar hoje (`saldo_atual`) | **Saldo total contratado** do grupo — soma de TODAS as parcelas, pagas e em aberto (`total_installment_amount`) |
+| Numerador | Saldo devedor dos contratos ruins (mesmo campo do denominador, `saldo_atual`) | Saldo em aberto (parcelas não pagas) dos contratos ruins (`total_due_amount`) |
+| Efeito prático | Cresce à medida que o contrato bom vai sendo pago (o saldo devedor total encolhe, então a mesma dívida ruim pesa proporcionalmente mais) | Não varia só por causa de pagamentos em dia de outros contratos, porque o denominador é o total contratado, fixo desde a originação |
+| População | Sempre exclui write-off (`max_delay < 360`) | Depende do filtro "Carteira" da aba (pode incluir write-off se "Carteira total" ou "WriteOff" estiver selecionado) |
+
+**Regra prática para responder perguntas do usuário**: se a pergunta cita "NPL" ou vem no contexto da aba "Análise da Carteira" (por rating/UF/CNAE/faixa de atraso), use a ferramenta/dado de NPL (saldo devedor). Se a pergunta cita "inadimplência" de forma genérica, ou vem no contexto de Painel Executivo/Análise de Risco/Simulador, use a fórmula canônica "% da Carteira" (saldo total). Se não estiver claro qual o usuário quer, prefira responder com a "Inadimplência" canônica (é a mais usada no Painel) e deixe explícito na resposta qual fórmula foi usada e por quê.
 
 ---
 
@@ -199,22 +218,24 @@ Mostra o comportamento específico dos contratos que passaram por renegociação
 
 ### 3.3 ⚠️ NPL por faixa de atraso & Aging
 
-Duas visões complementares da inadimplência, ambas calculadas sobre a carteira em aberto (excluindo write-off).
+Duas visões complementares do risco, ambas calculadas sobre a carteira em aberto (excluindo write-off) e **sobre o saldo devedor** — é aqui, e só aqui (mais a seção 3.9), que o Painel usa o termo "NPL"; ver a distinção completa com "Inadimplência" na seção 1.5.
 
-- **NPL por faixa de atraso**: para cada corte de atraso (15, 30, 60 e 90 dias), mostra quantos contratos e qual percentual do saldo devedor está naquela faixa ou pior. Segue a mesma lógica de "contrato inteiro entra na faixa se qualquer parcela atingir o corte" descrita na seção 1.4.
-- **Distribuição de Aging**: agrupa a carteira em aberto em faixas fixas de atraso (em dia, 1–30, 31–60, 61–90, 90+ dias), mostrando quantos contratos e qual % do saldo devedor está em cada faixa — uma "foto" da distribuição de atraso da carteira hoje.
+- **NPL por faixa de atraso**: para cada corte de atraso (15, 30, 60 e 90 dias):
+  > **% NPL da faixa X = (saldo devedor dos contratos com atraso ≥ X dias) ÷ (saldo devedor de toda a carteira em aberto) × 100**
+  Segue a mesma lógica de "contrato inteiro entra na faixa se qualquer parcela em aberto atingir o corte" descrita na seção 1.4. A tabela também mostra o número (e % do total de contratos) que caiu em cada faixa.
+- **Distribuição de Aging**: agrupa a carteira em aberto em faixas fixas e mutuamente exclusivas de atraso (em dia, 1–30, 31–60, 61–90, 90+ dias — diferente das faixas acumulativas do "NPL por faixa"), mostrando quantos contratos e qual % do saldo devedor está em cada uma — uma "foto" da distribuição de atraso da carteira hoje.
 
 ### 3.4 📈 Taxas-chave
 
 | Indicador | Fórmula |
 |---|---|
-| **Taxa de default** | % de contratos marcados como em default no sistema de origem |
-| **First payment default (FPD)** | % de contratos cuja primeira parcela já não foi paga em dia |
-| **Write-off (contratos)** | % de contratos que tiveram alguma parcela sinalizada como baixada a prejuízo no banco de origem (flag bruto do sistema — ver nota abaixo) |
-| **Write-off (% saldo originado)** | % do valor total originado que está em contratos com atraso ≥ 360 dias |
+| **Taxa de default** | % de contratos com a flag bruta `default = true` no sistema de origem — vem pronta do banco, não é recalculada pelo Painel |
+| **First payment default (FPD)** | % de contratos com a flag bruta `firstPaymentDefault = true` (1ª parcela em atraso) no sistema de origem — também vem pronta do banco, não é recalculada aqui |
+| **Write-off (contratos)** | % de contratos com alguma parcela sinalizada pelo flag bruto `writeOff` do sistema de origem (ver nota abaixo) |
+| **Write-off (% saldo originado)** | (soma do saldo a receber dos contratos com atraso ≥ 360 dias) ÷ (valor total originado do recorte) — usa o corte padrão `WO=360` da seção 1.2 |
 | **Taxa de renegociados** | % de contratos-raiz que já foram renegociados |
 
-> **Nota técnica importante**: o indicador "Write-off (contratos)" usa um sinalizador bruto do sistema de origem (se alguma parcela do contrato foi marcada como baixada), enquanto "Write-off (% saldo originado)" usa o corte padrão de 360 dias de atraso definido na seção 1.2. São duas leituras conceitualmente diferentes de "write-off" que coexistem neste bloco — vale ter isso em mente ao comparar os dois percentuais.
+> **Nota técnica importante**: "Write-off (contratos)" e "Write-off (% saldo originado)" usam **populações calculadas de forma independente** — a primeira depende só do flag bruto `writeOff` marcado pelo sistema de origem; a segunda depende só do atraso (`max_delay ≥ 360`). Um contrato pode estar em uma população e não na outra (ex.: marcado `writeOff=true` manualmente mas com atraso ainda abaixo de 360 dias, ou vice-versa) — os dois percentuais **podem não bater** e isso não é um erro, são critérios diferentes de "write-off" coexistindo neste bloco.
 
 ### 3.5 📅 Curva de maturação por safra
 
@@ -222,11 +243,11 @@ Mostra como a inadimplência de cada "safra" (grupo de contratos originados no m
 
 **Como é calculado**: para cada combinação de safra e "idade" (meses desde a originação), o Painel reconstrói, parcela a parcela, qual seria o atraso de cada contrato naquele momento específico do passado (usando as datas de vencimento e de pagamento reais, sem depender de um histórico salvo dia a dia). O indicador de cada célula é:
 
-> **% NPL da safra na idade X = (saldo que ainda estava em aberto, entre os contratos com atraso ≥ 90 dias naquela idade) ÷ (valor total originado pela safra, fixo)**
+> **% Inadimplência da safra na idade X = (saldo que ainda estava em aberto, entre os contratos com atraso ≥ 90 dias naquela idade) ÷ (valor total originado pela safra, fixo)**
 
-O denominador é sempre o tamanho original da safra (não muda com o tempo), enquanto o numerador usa o saldo que efetivamente estava em aberto naquele momento específico do passado — isso evita superestimar a perda de contratos que já pagaram boa parte das parcelas antes de entrar em atraso.
+Repare que este é um **terceiro tipo de denominador**, diferente tanto do NPL (saldo devedor, seção 1.5) quanto da Inadimplência canônica (saldo total contratado — pago + em aberto, seção 1.3): aqui o denominador é o **valor originado da safra**, fixo desde o desembolso e que nunca muda com o tempo, enquanto o numerador usa o saldo que efetivamente estava em aberto naquele momento específico do passado — isso evita superestimar a perda de contratos que já pagaram boa parte das parcelas antes de entrar em atraso. Ao responder perguntas sobre esta curva, não misture esse percentual com o NPL ou a Inadimplência canônica de outras seções — são bases de cálculo diferentes.
 
-**Visualizações**: um mapa de calor (safra x idade em meses, cor = % NPL) para visão geral, e um gráfico de linhas para comparar safras específicas lado a lado (com uma linha tracejada mostrando a média de toda a carteira em cada idade).
+**Visualizações**: um mapa de calor (safra x idade em meses, cor = % Inadimplência) para visão geral, e um gráfico de linhas para comparar safras específicas lado a lado (com uma linha tracejada mostrando a média de toda a carteira em cada idade). A escala de cor do mapa de calor é fixa (não se ajusta ao filtro): verde até 20%, amarelo a partir de 20%, vermelho a partir de 40%, escurecendo progressivamente até vermelho bem escuro perto de 100%.
 
 ### 3.6 🔀 Matriz de rolagem (roll-rate)
 
@@ -250,15 +271,21 @@ Mostra a probabilidade de um contrato migrar de uma faixa de atraso para outra d
 
 Mede o quanto a carteira depende de poucos clientes grandes, usando o Índice Herfindahl-Hirschman (HHI), uma métrica clássica de concentração.
 
+> **Atenção de população**: a base usada aqui é "contratos com saldo devedor em aberto" (`saldo_atual > 0`), o que **inclui contratos em write-off** (eles continuam com parcelas não pagas, logo `saldo_atual > 0`). Não é o mesmo recorte de "Carteira em aberto" usado na seção 3.1 e no resto do Painel, que exclui write-off explicitamente.
+
 | Indicador | Fórmula |
 |---|---|
-| **HHI** | Soma do quadrado da participação percentual de cada cliente (por CPF/CNPJ) no saldo devedor total da carteira em aberto. Varia de perto de 0 (carteira muito pulverizada) a 10.000 (um único cliente concentra tudo) |
-| **% saldo no top 10 clientes** | Soma da participação percentual dos 10 clientes com maior saldo devedor |
+| **HHI** | Soma do quadrado da participação percentual de cada cliente (agrupado por CPF/CNPJ, campo `taxId`) no saldo devedor total da base acima (inclui write-off). Varia de perto de 0 (carteira muito pulverizada) a 10.000 (um único cliente concentra tudo) |
+| **% saldo no top 10 clientes** | Soma da participação percentual dos 10 clientes com maior saldo devedor, sobre a mesma base |
 | **Top 15 clientes** (gráfico/tabela) | Lista dos 15 clientes com maior participação individual no saldo devedor |
 
 ### 3.9 🧑‍💼 Perfil de risco do cliente (CCB)
 
-Mostra a taxa de inadimplência (NPL 90+, ponderada pelo saldo devedor) segmentada por três dimensões do cliente: **rating**, **estado (UF)** e **setor de atividade (CNAE)**. A base usada combina os dados de contrato com os dados cadastrais do cliente.
+Mostra o **NPL 90+** (sobre o saldo devedor — mesma metodologia da seção 3.3, não confundir com a "Inadimplência" de saldo total da seção 1.5) segmentado por três dimensões do cliente: **rating**, **estado (UF)** e **setor de atividade (CNAE)**. Só cobre contratos CCB (que têm chave exata com os dados cadastrais); a base combina os contratos com `client_data` e **exclui write-off** (`max_delay < 360`), para ficar comparável ao "NPL por faixa de atraso" da seção 3.3.
+
+> **% NPL90+ por categoria = (saldo devedor dos contratos daquela categoria com atraso ≥ 90 dias) ÷ (saldo devedor total da categoria, sem write-off) × 100**
+
+Campos usados: `rating_v4`, `state` e `cnaeFiltered` (de `client_data`) para as três dimensões; `max_delay` e `saldo_atual` (de `installments`) para o cálculo do NPL.
 
 Fecha com um bloco de **Restrições cadastrais**, mostrando o percentual de clientes com registro de: protesto, restritivo nacional, PEP (pessoa politicamente exposta), mandado de prisão e trabalho escravo — sinalizações vindas do processo de análise cadastral.
 
@@ -276,8 +303,8 @@ Uma visão consolidada e executiva da carteira, com indicadores de negócio, ris
 | **Contratos Ativos** | Contagem de contratos que ainda não foram 100% quitados |
 | **Taxa Juros Média** | Taxa de juros mensal contratada, ponderada pelo valor de principal de cada contrato |
 | **Ticket Médio** | Média simples do valor de principal por contrato |
-| **FPD (90d)** | Ver fórmula canônica de "% da Carteira" na seção 1.3, aplicada ao corte de primeira parcela em atraso |
-| **Inadimplência 90d** | Fórmula canônica de "% da Carteira" (seção 1.3), no corte de 90 dias — é o mesmo número, calculado da mesma forma, que aparece em toda a Análise de Risco |
+| **FPD (90d)** | Fórmula canônica de "% da Carteira" (seção 1.3 — denominador = saldo TOTAL contratado), aplicada ao corte de primeira parcela em atraso |
+| **Inadimplência 90d** | Fórmula canônica de "% da Carteira" (seção 1.3 — denominador = saldo TOTAL contratado), no corte de 90 dias — é o mesmo número, calculado da mesma forma, que aparece em toda a Análise de Risco. **Não confundir com o "NPL 90+" da aba "Análise da Carteira"** (seção 1.5), que usa o saldo devedor como denominador — os dois podem ter valores diferentes para o mesmo recorte de dados |
 | **Cobertura PDD** | Ver seção 4.3 |
 | **Margem Financeira Estimada** | Ver seção 4.3 |
 
@@ -291,7 +318,7 @@ Uma tabela com 10 indicadores de composição (total de contratos, clientes úni
 
 ### 4.3 Tópico 3 — Indicadores de Risco e Financeiros
 
-**Indicadores de Risco**: tabela com as faixas de atraso (FPD 90d, 15+, 30+, 60+, 90+ dias), mostrando o saldo em atraso em reais e o percentual da carteira (fórmula canônica da seção 1.3) para cada faixa, no Total e por categoria.
+**Indicadores de Risco**: tabela com as faixas de atraso (FPD 90d, 15+, 30+, 60+, 90+ dias), mostrando o saldo em atraso em reais e o percentual da carteira (fórmula canônica da seção 1.3 — saldo em aberto ÷ saldo TOTAL contratado; é "Inadimplência", não "NPL") para cada faixa, no Total e por categoria.
 
 **Indicadores Financeiros**:
 
@@ -313,9 +340,9 @@ Para cada mês de originação, mostra: quantidade de contratos, volume concedid
 
 ## 5. Análise de Risco
 
-Esta aba foi criada para apoiar decisões de política de crédito, identificando **quais variáveis (rating, estado, setor, renda, tempo de atividade, ticket, categoria de produto) mais explicam a inadimplência** da carteira. Usa a mesma base de dados e as mesmas fórmulas do Painel Executivo — inclusive a fórmula canônica de "% da Carteira" (seção 1.3) — para garantir que os números sejam sempre consistentes entre as duas abas.
+Esta aba foi criada para apoiar decisões de política de crédito, identificando **quais variáveis (rating, estado, setor, renda, tempo de atividade, ticket, categoria de produto) mais explicam a inadimplência** da carteira. Usa a mesma base de dados e as mesmas fórmulas do Painel Executivo — inclusive a fórmula canônica de "% da Carteira" (seção 1.3, denominador = saldo TOTAL contratado) — para garantir que os números sejam sempre consistentes entre as duas abas. Em toda esta aba o Painel chama esse percentual de **"Inadimplência"**, nunca de "NPL" (ver seção 1.5) — se o usuário perguntar sobre "NPL por variável", explique que o equivalente correto aqui é a "Inadimplência por variável", calculada sobre o saldo total, não sobre o saldo devedor.
 
-Os filtros compartilhados pelas duas sub-abas são: **Carteira** (Em aberto/WriteOff/Total), **Produto** (CCB e/ou CPR, pode ser os dois juntos), subfiltros de tipo (CCB e CPR), **Mínimo de contratos por categoria** (esconde categorias com poucos contratos, para não distorcer a leitura com grupos muito pequenos) e **Período** (Início/Fim).
+Os filtros compartilhados pelas duas sub-abas são: **Carteira** (Em aberto/WriteOff/Total), **Produto** (CCB e/ou CPR, pode ser os dois juntos), subfiltros de tipo (CCB e CPR), **Mínimo de contratos por categoria** (esconde categorias/combinações com poucos contratos, para não distorcer a leitura com grupos muito pequenos — o valor padrão do filtro é 1, ou seja, por padrão nada é escondido) e **Período** (Início/Fim).
 
 As variáveis analisadas em toda a aba são: Categoria (App/Crédito Produtor ou tipo de CPR), Rating, UF, Setor (CNAE), Faixa de Renda, Tempo de Atividade e Faixa de Ticket (esta última é um corte de risco de crédito clássico por valor do contrato).
 
@@ -325,25 +352,29 @@ As variáveis analisadas em toda a aba são: Categoria (App/Crédito Produtor ou
 
 Este é o indicador criativo central da aba: mede o **poder discriminante** de cada variável, ou seja, o quanto ela ajuda a distinguir contratos de baixo e alto risco.
 
-> **Dispersão de uma variável = (maior % de NPL 90+ entre suas categorias) − (menor % de NPL 90+ entre suas categorias)**
+> **Dispersão de uma variável = (maior % de Inadimplência 90+ entre suas categorias) − (menor % de Inadimplência 90+ entre suas categorias)**
 
-Se uma variável separa bem bons e maus pagadores (por exemplo, um estado com NPL de 2% e outro com 40%), sua dispersão é alta — é uma boa candidata para orientar decisões de política de crédito, como restringir ou precificar diferente a pior categoria. Se todas as categorias de uma variável têm NPL parecido, a variável pouco importa para diferenciar risco nesse recorte. O ranking mostra as variáveis ordenadas da mais para a menos discriminante, junto com qual é a pior categoria de cada uma e seu percentual de NPL.
+"% de Inadimplência 90+" aqui é sempre a fórmula canônica da seção 1.3 (saldo em aberto ÷ saldo TOTAL contratado do grupo), calculada por categoria, **depois** de descartar categorias com menos contratos que o "Mínimo de contratos por categoria". Se uma variável separa bem bons e maus pagadores (por exemplo, um estado com inadimplência de 2% e outro com 40%), sua dispersão é alta — é uma boa candidata para orientar decisões de política de crédito, como restringir ou precificar diferente a pior categoria. Se todas as categorias de uma variável têm inadimplência parecida, a variável pouco importa para diferenciar risco nesse recorte. O ranking mostra as variáveis ordenadas da mais para a menos discriminante, junto com qual é a pior categoria de cada uma e seu percentual de inadimplência.
 
 #### 5.1.2 "Inadimplência por variável" (exploração individual)
 
 Ao escolher uma variável (por exemplo, "UF"), o Painel mostra, para cada categoria dessa variável:
 
-- **% de NPL 90+** (fórmula canônica da seção 1.3, calculada dentro daquele grupo).
+- **% de Inadimplência 90+** (fórmula canônica da seção 1.3 — saldo em aberto ÷ saldo TOTAL contratado, calculada dentro daquele grupo).
 - **Número de contratos**, **volume concedido** e **saldo devedor** do grupo.
 
 Duas visualizações complementares:
 
-- **Gráfico de barras**: ranking das categorias por % de NPL, do maior para o menor risco.
-- **Gráfico de bolhas "Risco x Exposição"**: cada bolha é uma categoria, com a posição horizontal mostrando o % de NPL, a posição vertical mostrando o saldo devedor (exposição em R$) e o tamanho da bolha mostrando o número de contratos. Duas linhas de referência (a média ponderada de NPL e a mediana de saldo devedor) dividem o gráfico em quadrantes — o quadrante superior direito (NPL alto e saldo devedor alto) concentra as categorias mais urgentes, pois já carregam risco absoluto relevante na carteira, não só percentual.
+- **Gráfico de barras**: ranking das categorias por % de Inadimplência, do maior para o menor risco.
+- **Gráfico de bolhas "Risco x Exposição"**: cada bolha é uma categoria, com a posição horizontal mostrando o % de Inadimplência, a posição vertical mostrando o saldo devedor (exposição em R$) e o tamanho da bolha mostrando o número de contratos. Duas linhas de referência (a média ponderada de inadimplência e a mediana de saldo devedor) dividem o gráfico em quadrantes — o quadrante superior direito (inadimplência alta e saldo devedor alto) concentra as categorias mais urgentes, pois já carregam risco absoluto relevante na carteira, não só percentual.
 
 #### 5.1.3 Cruzamento de duas variáveis
 
-Permite escolher duas variáveis (por exemplo, UF e Setor) e ver, em um mapa de calor, o % de NPL 90+ de cada combinação das duas — útil para identificar interações específicas (por exemplo, um setor que só é problemático em determinado estado).
+Permite escolher duas variáveis (por exemplo, UF e Setor) e ver, em um mapa de calor, o % de Inadimplência 90+ (fórmula canônica, saldo em aberto ÷ saldo TOTAL contratado da combinação) de cada combinação das duas — útil para identificar interações específicas (por exemplo, um setor que só é problemático em determinado estado). Passar o mouse sobre uma célula mostra as duas categorias, o % de inadimplência e o **número de contratos** daquela combinação específica.
+
+> **Atenção — "Mínimo de contratos por categoria" aqui é aplicado por CÉLULA, não pela variável inteira.** No ranking (5.1.1) e na exploração individual (5.1.2), o filtro descarta uma categoria só se o TOTAL de contratos dela (somando todas as outras variáveis) for menor que o mínimo. Já no cruzamento, o filtro é aplicado a cada combinação das duas variáveis separadamente — então uma categoria com bastante volume pode "sumir" quase inteira do mapa de calor se esse volume estiver espalhado entre muitas combinações pequenas, sobrando só a(s) combinação(ões) que individualmente atingem o mínimo. Isso significa que o mapa de cruzamento pode mostrar um número bem diferente (e uma amostra bem menor) do que o número agregado da mesma categoria no ranking ou na exploração individual — **não é uma inconsistência, é a granularidade do filtro mudando**. Ao responder perguntas comparando um valor do cruzamento com um valor do ranking/exploração individual para a mesma categoria, sempre explique essa diferença de filtro.
+
+A escala de cor do mapa de calor é fixa (não se ajusta ao filtro/cruzamento selecionado): verde abaixo de 25%, amarelo a partir de 25%, laranja a partir de 50%, vermelho pleno em 100%.
 
 ### 5.2 Sub-aba Simulador
 
@@ -355,6 +386,8 @@ Os indicadores comparativos usam exatamente as mesmas fórmulas do Painel Execut
 
 - Total Concedido, Contratos Ativos, Ticket Médio, Taxa Juros Média
 - FPD (90d), Inadimplência 90d, Cobertura PDD, Margem Financeira Estimada
+
+Como em todo o Painel Executivo e Análise de Risco, "FPD (90d)" e "Inadimplência 90d" aqui usam a fórmula canônica de "% da Carteira" — saldo em aberto ÷ saldo TOTAL contratado do grupo (Atual, Simulada ou Segmento) — não o NPL sobre saldo devedor da aba "Análise da Carteira" (seção 1.5).
 
 Cada KPI mostra o valor simulado em destaque e a variação em relação ao valor atual, permitindo avaliar rapidamente se excluir aquele perfil reduziria a inadimplência e o quanto isso custaria em volume/margem. Um bloco final resume o que há dentro do segmento excluído (número de contratos, % da carteira, volume concedido e inadimplência do segmento).
 
@@ -426,12 +459,13 @@ Permite selecionar um cliente/contrato específico e visualizar toda a sua traje
 | Termo | Significado |
 |---|---|
 | **Raiz / contrato raiz** | O contrato original de onde partiu a relação de crédito, antes de qualquer renegociação. Renegociações são sempre remapeadas para a raiz nos cálculos. |
-| **Write-off (WO = 360)** | Contrato com atraso de 360 dias ou mais em alguma parcela — considerado baixado a prejuízo na maior parte dos cálculos do Painel. |
-| **NPL (Non-Performing Loan)** | Contrato em atraso além de um determinado corte de dias (15, 30, 60 ou 90). No Painel, um contrato inteiro entra no NPL de uma faixa se qualquer parcela em aberto atingir aquele atraso. |
-| **% da Carteira / NPL 90+** | Fórmula canônica: saldo das parcelas em aberto de contratos com atraso ≥ 90 dias, dividido pelo total contratado (pago + em aberto) do recorte. Ver seção 1.3. |
-| **PDD** | Provisão para Devedores Duvidosos — no Painel Executivo, calculada como 50% do saldo de principal em contratos com atraso ≥ 90 dias. |
-| **Safra** | Grupo de contratos originados no mesmo mês, usado para acompanhar a maturação da inadimplência ao longo do tempo de vida do contrato. |
-| **HHI** | Índice Herfindahl-Hirschman — mede a concentração da carteira em poucos clientes grandes. |
+| **Write-off (WO = 360)** | Contrato com atraso de 360 dias ou mais em alguma parcela — considerado baixado a prejuízo na maior parte dos cálculos do Painel. Atenção: o indicador "Write-off (contratos)" da Análise da Carteira usa um flag bruto (`writeOff`) independente desse corte de 360 dias — ver seção 3.4. |
+| **NPL (Non-Performing Loan)** | Termo usado SÓ na aba "Análise da Carteira" (seções 3.3 e 3.9): contrato em atraso além de um corte de dias (15, 30, 60 ou 90), calculado sobre o **saldo devedor** (não sobre o saldo total contratado). Um contrato inteiro entra no NPL de uma faixa se qualquer parcela em aberto atingir aquele atraso. Ver a distinção completa com "Inadimplência" na seção 1.5 — **não é sinônimo de "% da Carteira"**. |
+| **Inadimplência / "% da Carteira"** | Termo usado no Painel Executivo e em toda a Análise de Risco: saldo das parcelas em aberto de contratos com atraso ≥ 90 dias (ou outro corte), dividido pelo **saldo TOTAL contratado** (pago + em aberto) do recorte — denominador diferente do NPL. Ver seção 1.3 (fórmula) e 1.5 (comparação lado a lado com o NPL). |
+| **PDD** | Provisão para Devedores Duvidosos — no Painel Executivo, calculada como 50% do saldo de PRINCIPAL (não o valor cheio da parcela) em contratos com atraso ≥ 90 dias. Ver seção 4.3. |
+| **Safra** | Grupo de contratos originados no mesmo mês, usado para acompanhar a maturação da inadimplência ao longo do tempo de vida do contrato. Na "Curva de maturação por safra" (3.5), o percentual de cada célula usa como denominador o valor originado da safra (fixo) — um terceiro tipo de base, diferente do NPL e da Inadimplência canônica. |
+| **HHI** | Índice Herfindahl-Hirschman — mede a concentração da carteira em poucos clientes grandes, agrupando por CPF/CNPJ (`taxId`). Na Análise da Carteira (3.8), a base inclui contratos em write-off (usa `saldo_atual > 0`, não o recorte "Carteira em aberto"). |
 | **PSI (Population Stability Index)** | Mede o quanto uma distribuição (de score ou de rating) se deslocou em relação a uma base de referência. Existem duas versões no Painel — ver seção 2 para a diferença entre elas. |
 | **KS (Kolmogorov-Smirnov)** | Na sub-aba Relatório, mede a capacidade do modelo de separar bons e maus pagadores. Na sub-aba Estabilidade Rating (onde é chamado de KS1), mede o deslocamento máximo entre a distribuição acumulada de ratings de um mês e a da safra de referência. |
 | **Categoria** | Segunda camada de segmentação usada no Painel Executivo e na Análise de Risco: "App"/"Crédito Produtor" para CCB, ou o tipo de produto CPR (dinâmico, conforme cadastro). |
+| **Mínimo de contratos por categoria** | Filtro da Análise de Risco que descarta categorias (ou, no cruzamento de duas variáveis, combinações de categorias) com poucos contratos. Aplicado por variável inteira no ranking/exploração individual, mas por CÉLULA no cruzamento — ver o alerta na seção 5.1.3. Padrão: 1 (não esconde nada). |

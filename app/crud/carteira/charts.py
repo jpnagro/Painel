@@ -1,5 +1,16 @@
 import plotly.express as px
 
+# Escala fixa (0-100%) pro heatmap de maturação: verde até ~20%, amarelo já
+# a partir de 20%, vermelho (ainda moderado) a partir de 40%, escurecendo
+# progressivamente até vermelho bem escuro em 100%. zmin/zmax fixos pra o
+# range de cor não mudar conforme o recorte de safras/filtros selecionado.
+_ESCALA_MATURACAO = [
+    [0.00, "#2A9D8F"],  # verde
+    [0.20, "#E9C46A"],  # amarelo a partir de 20%
+    [0.40, "#E76F51"],  # vermelho (moderado) a partir de 40%
+    [1.00, "#5C0A0A"],  # vermelho bem escuro em 100%
+]
+
 
 def build_mix_produto_chart(mix_produto):
     fig = px.bar(
@@ -57,7 +68,7 @@ def build_curva_maturacao_heatmap(curva_maturacao_safra, faixa_npl=90, idade_max
     """Visão geral das safras (a partir de `safra_minima`) como mapa de
     calor (safra x idade em meses, limitada a `idade_maxima`). Substitui
     o gráfico de linhas sobrepostas (ilegível com muitas safras) — aqui dá
-    pra escanear visualmente quais safras (linhas) pioraram e como o NPL
+    pra escanear visualmente quais safras (linhas) pioraram e como a inadimplência
     evolui com a idade (colunas), sem dezenas de linhas se cruzando."""
     df = curva_maturacao_safra.copy()
     df = df[df["safra"] >= safra_minima]
@@ -68,9 +79,9 @@ def build_curva_maturacao_heatmap(curva_maturacao_safra, faixa_npl=90, idade_max
     pivot.index = [_formatar_safra_pt(s) for s in pivot.index]
 
     fig = px.imshow(
-        pivot, color_continuous_scale="RdYlGn_r", aspect="auto",
-        labels=dict(x="Idade da safra (meses)", y="Safra", color=f"% NPL{faixa_npl}+"),
-        title=f"Curva de maturação por safra — mapa de calor (% NPL{faixa_npl}+ do valor originado)",
+        pivot, color_continuous_scale=_ESCALA_MATURACAO, zmin=0, zmax=100, aspect="auto",
+        labels=dict(x="Idade da safra (meses)", y="Safra", color=f"% Inad{faixa_npl}+"),
+        title=f"Curva de maturação por safra — mapa de calor (% Inadimplência {faixa_npl}+ do valor originado)",
     )
     fig.update_layout(height=min(1400, max(420, 22 * pivot.shape[0])))
     fig.update_xaxes(side="top")
@@ -99,10 +110,10 @@ def build_curva_maturacao_linhas(curva_maturacao_safra, safras_selecionadas=None
         df, x="idade_meses", y="pct_npl_valor_originado", color="safra", markers=True,
         labels={
             "idade_meses": "Idade da safra (meses desde a originação)",
-            "pct_npl_valor_originado": f"% NPL{faixa_npl}+ do valor originado",
+            "pct_npl_valor_originado": f"% Inad{faixa_npl}+ do valor originado",
             "safra": "Safra",
         },
-        title=f"Curva de maturação — safras selecionadas vs. média da carteira (% NPL{faixa_npl}+)",
+        title=f"Curva de maturação — safras selecionadas vs. média da carteira (% Inadimplência{faixa_npl}+)",
     )
     fig.add_scatter(
         x=media["idade_meses"], y=media["pct_npl_valor_originado"],
