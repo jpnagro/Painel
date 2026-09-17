@@ -130,18 +130,22 @@ def _render_estabilidade_body():
 
     if not CSV_PATH.exists():
         st.info(
-            "Arquivo de deals não encontrado localmente — buscando dados atualizados do CRM "
-            "automaticamente (pode levar alguns minutos)..."
+            "Os dados de rating do CRM (HubSpot) ainda não foram carregados nesta instalação. "
+            "Clique no botão abaixo para buscá-los — isso pode levar alguns minutos. (Os dados não "
+            "são carregados automaticamente para não deixar a página lenta quando ninguém precisa dela.)"
         )
-        with st.spinner("Buscando deals no HubSpot..."):
-            try:
-                from crud.get_hubspot_data import update_hubspot_csv
-                combined = update_hubspot_csv()
-                load_deals.clear()
-                st.success(f"Dados buscados com sucesso! {len(combined):,} deals no total.")
-            except Exception as exc:
-                st.error(f"Não foi possível buscar os dados do CRM automaticamente: {exc}")
-                st.stop()
+        if st.button("📥 Carregar dados do HubSpot", key="est_carregar_inicial"):
+            with st.spinner("Buscando deals no HubSpot (pode levar alguns minutos)..."):
+                try:
+                    from crud.get_hubspot_data import update_hubspot_csv
+                    combined = update_hubspot_csv()
+                    load_deals.clear()
+                    st.success(f"Dados buscados com sucesso! {len(combined):,} deals no total.")
+                except Exception as exc:
+                    st.error(f"Não foi possível buscar os dados do CRM: {exc}")
+                    st.stop()
+        else:
+            st.stop()
 
     if not CSV_PATH.exists():
         st.error(f"Arquivo não encontrado: {CSV_PATH}")
