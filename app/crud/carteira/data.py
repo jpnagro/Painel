@@ -45,6 +45,12 @@ def _bool_true(serie):
     return serie.apply(lambda x: bool(x) if pd.notna(x) else False)
 
 
+# Tipos de produto CPR que NÃO entram no Painel: 'Antecipação Recebiveis' é
+# usado como produto de "estacionamento" (contrato que não deve contar em
+# data nenhuma).
+PRODUTOS_CPR_EXCLUIDOS = ("Antecipação Recebiveis",)
+
+
 def preparar_bases(ccb, cpr, inst_ccb, inst_cpr):
     ccb_c = ccb.copy()
     ccb_c["produto"] = "CCB"
@@ -103,9 +109,22 @@ def preparar_bases(ccb, cpr, inst_ccb, inst_cpr):
     # com o valor originado, data de originação e demais atributos "de
     # verdade" do empréstimo — as renegociações não entram aqui, pra não
     # duplicar o valor originado.
-    contratos_originais = contratos[~contratos["renegociacao_flag"]].copy()
+    # Produtos CPR "de estacionamento" (ex.: 'Antecipação Recebiveis') não
+    # contam em nenhum indicador do Painel -- os contratos dele (e as parcelas
+    # deles, removidas mais abaixo, ANTES do remapeamento pra raiz) saem da
+    # base. A cadeia de renegociação acima já foi resolvida sobre TODOS os
+    # contratos, então excluir aqui não quebra a consolidação das demais.
+    if "productType" in contratos.columns:
+        ops_excluidos = set(
+            contratos.loc[contratos["productType"].isin(PRODUTOS_CPR_EXCLUIDOS), "operationCode"]
+        )
+    else:
+        ops_excluidos = set()
+    contratos_validos = contratos[~contratos["operationCode"].isin(ops_excluidos)]
+
+    contratos_originais = contratos_validos[~contratos_validos["renegociacao_flag"]].copy()
     contratos_ativos = contratos_originais.copy()
-    contratos_reneg = contratos[contratos["renegociado_flag"]].copy()
+    contratos_reneg = contratos_validos[contratos_validos["renegociado_flag"]].copy()
 
     # ------------------------------------------------------------------
     # Parcelas: busca TODAS (original + renegociações, sem exceção) e
@@ -124,6 +143,9 @@ def preparar_bases(ccb, cpr, inst_ccb, inst_cpr):
     parcelas = pd.concat([inst_ccb, inst_cpr], ignore_index=True, sort=False)
     parcelas["renegociado_flag"] = _bool_true(parcelas["renegotiated"])
     parcelas = parcelas.merge(info_geracao, on="operationCode", how="left")
+    # parcelas dos contratos de produto excluído saem aqui, pelo operationCode
+    # ORIGINAL (antes de qualquer remapeamento pra raiz)
+    parcelas = parcelas[~parcelas["operationCode"].isin(ops_excluidos)].copy()
 
     # se a parcela foi renegociada, ela só valeu até a próxima geração
     # começar; se nunca foi renegociada, vale "pra sempre" (sentinela)
@@ -158,7 +180,7 @@ def preparar_bases(ccb, cpr, inst_ccb, inst_cpr):
     parcelas_reneg = parcelas[parcelas["renegociado_flag"]].copy()
 
     return (
-        contratos, contratos_ativos, contratos_reneg, contratos_originais,
+        contratos_validos, contratos_ativos, contratos_reneg, contratos_originais,
         parcelas_ativos, parcelas_reneg, parcelas_com_vigencia,
     )
 

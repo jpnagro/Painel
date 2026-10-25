@@ -35,7 +35,7 @@ from crud.monitoramento_clientes.indicators import (
 # Reaproveita a mesma constante/lista de opções de "Tipo de operação (CCB)"
 # usada na aba "Análise da carteira" (`crud/carteira/data.py`), pra não
 # divergir do rótulo/critério de "sem client_data" usado lá.
-from crud.carteira.data import SEM_CLIENT_DATA
+from crud.carteira.data import PRODUTOS_CPR_EXCLUIDOS, SEM_CLIENT_DATA
 from core.ui import colunas_compactas
 # Reaproveita a MESMA base (e o mesmo cache) já usada pela aba "Painel
 # Executivo" pra saber o estado de carteira (quitado/write-off) de cada
@@ -137,11 +137,11 @@ def _render_monitoramento_clientes_body():
 
     if error_msg:
         st.error(f"Erro ao carregar dados de monitoramento: {error_msg}")
-        st.stop()
+        return
 
     if pares_status.empty:
         st.info("Nenhum registro encontrado em customer_monitoring.")
-        st.stop()
+        return
 
     with col_info:
         st.caption(
@@ -171,7 +171,7 @@ def _render_monitoramento_clientes_body():
             key="moncli_filtro_carteira",
             help=(
                 "Mesmo critério da aba \"Painel Executivo\": \"Carteira em aberto\" exclui "
-                "contratos já quitados e os em write-off (atraso ≥ 360 dias); \"WriteOff\" mostra "
+                "contratos já quitados e os em write-off (atraso > 360 dias); \"WriteOff\" mostra "
                 "só os em write-off; \"Carteira total\" não filtra por estado."
             ),
         )
@@ -222,8 +222,10 @@ def _render_monitoramento_clientes_body():
         if col_sub_cpr is not None:
             with col_sub_cpr:
                 tipos_cpr = sorted(
-                    pares_status.loc[pares_status["produto_atual"] == "CPR", "tipo_produto_cpr_atual"]
-                    .dropna().unique().tolist()
+                    t for t in pares_status.loc[
+                        pares_status["produto_atual"] == "CPR", "tipo_produto_cpr_atual"
+                    ].dropna().unique()
+                    if t not in PRODUTOS_CPR_EXCLUIDOS  # produto de estacionamento: não conta no Painel
                 )
                 subfiltro_cpr = st.multiselect(
                     "Tipo de produto (CPR)",
@@ -239,7 +241,7 @@ def _render_monitoramento_clientes_body():
                 default=["Carteira Adimplente"],
                 key="moncli_filtro_status_carteira",
                 help=(
-                    "\"Carteira Inadimplente\": contratos em aberto (não quitados e sem atingir o corte de "
+                    "\"Carteira Inadimplente\": contratos em aberto (não quitados e sem ultrapassar o corte de"
                     "write-off) e com atraso (max_delay > 0). \"Carteira Adimplente\": todo o restante "
                     "(quitados, write-off, ou em aberto mas em dia)."
                 ),
@@ -299,7 +301,7 @@ def _render_monitoramento_clientes_body():
 
     if base.empty:
         st.warning("Nenhum contrato para os filtros selecionados.")
-        st.stop()
+        return
 
     total = len(base)
     com_historico = int(base["tem_historico"].sum())
@@ -312,7 +314,7 @@ def _render_monitoramento_clientes_body():
         isinstance(periodo2, (tuple, list)) and len(periodo2) == 2
     ):
         st.info("Selecione a data de início e de fim dos dois períodos para continuar.")
-        st.stop()
+        return
 
     inicio1, fim1 = periodo1
     inicio2, fim2 = periodo2
@@ -328,7 +330,7 @@ def _render_monitoramento_clientes_body():
 
     if snap1.empty:
         st.warning("Nenhum contrato monitorado no período de análise (filtro 1) selecionado.")
-        st.stop()
+        return
 
     # Sub-bases restritas a quem tem consulta dentro de cada período — usadas
     # nos indicadores/gráficos que devem representar "quem está no filtro 1

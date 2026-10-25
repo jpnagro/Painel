@@ -11,7 +11,13 @@ from crud.carteira.charts import (
     build_npl_faixa_chart,
     build_npl_por_dimensao_chart,
 )
-from crud.carteira.data import SEM_CLIENT_DATA, carregar_dados, get_engine, ops_raiz_por_operation_type
+from crud.carteira.data import (
+    PRODUTOS_CPR_EXCLUIDOS,
+    SEM_CLIENT_DATA,
+    carregar_dados,
+    get_engine,
+    ops_raiz_por_operation_type,
+)
 from crud.carteira.indicators import calcular_indicadores
 from core.ui import colunas_compactas
 
@@ -133,7 +139,9 @@ def _render_carteira_body():
         subfiltro_cpr = None
         if col_cpr is not None:
             with col_cpr:
-                tipos_cpr = sorted(cpr_bruto["productType"].dropna().unique().tolist())
+                tipos_cpr = sorted(
+                    t for t in cpr_bruto["productType"].dropna().unique() if t not in PRODUTOS_CPR_EXCLUIDOS
+                )
                 subfiltro_cpr = st.multiselect(
                     "Tipo de produto (CPR)",
                     options=tipos_cpr,
@@ -179,7 +187,7 @@ def _render_carteira_body():
 
     if error_msg:
         st.error(f"Erro ao carregar dados do SGC: {error_msg}")
-        st.stop()
+        return
 
     # --- Resumo da carteira -------------------------------------------------
     st.divider()
@@ -203,11 +211,11 @@ def _render_carteira_body():
     st.subheader(
         "📊 Resumo da carteira em aberto",
         help="Mesmos 6 indicadores do bloco 'Total', mas excluindo contratos já 100% quitados e "
-        "contratos em write-off (atraso ≥360 dias) — é a carteira 'viva', ainda não baixada.",
+        "contratos em write-off (atraso >360 dias) — é a carteira 'viva', ainda não baixada.",
     )
     resumo = resultados["resumo_carteira_aberta"].iloc[0]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz em aberto (não quitados e sem atingir 360 dias de atraso).")
+    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz em aberto (não quitados e sem ultrapassar 360 dias de atraso).")
     c2.metric("Valor originado", _brl(resumo["valor_originado_total"]), help="Soma do valor de principal concedido nos contratos em aberto.")
     c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]), help="Soma do valor cheio (pago + em aberto) das parcelas dos contratos em aberto.")
     c4.metric("Valor pago", _brl(resumo["valor_pago"]), help="Soma dos valores já pagos nas parcelas dos contratos em aberto.")
@@ -218,18 +226,18 @@ def _render_carteira_body():
 
     st.subheader(
         "📊 Resumo da carteira em WriteOff",
-        help="Apenas os contratos-raiz com atraso ≥360 dias em alguma parcela — considerados "
+        help="Apenas os contratos-raiz com atraso >360 dias em alguma parcela — considerados "
         "baixados a prejuízo. Como todo write-off já passou dos 90 dias, o 'Saldo NPL 90+' aqui é "
         "igual ao 'Saldo devedor' deste bloco.",
     )
     resumo = resultados["resumo_carteira_writeoff"].iloc[0]
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz com atraso ≥360 dias em alguma parcela.")
+    c1.metric("Nº contratos", f"{int(resumo['n_contratos']):,}", help="Contagem de contratos-raiz com atraso >360 dias em alguma parcela.")
     c2.metric("Valor originado", _brl(resumo["valor_originado_total"]), help="Soma do valor de principal concedido nos contratos em write-off.")
     c3.metric("Valor total das parcelas", _brl(resumo["valor_total_parcelas"]), help="Soma do valor cheio (pago + em aberto) das parcelas dos contratos em write-off.")
     c4.metric("Valor pago", _brl(resumo["valor_pago"]), help="Soma dos valores já pagos nas parcelas dos contratos em write-off, antes da baixa.")
     c5.metric("Saldo devedor", _brl(resumo["saldo_devedor_total"]), help="Soma do saldo em aberto dos contratos em write-off.")
-    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']), help="Igual ao 'Saldo devedor' deste bloco — todo contrato em write-off (≥360 dias) já está muito além do corte de 90 dias.")
+    c6.metric("Saldo NPL 90+", _brl(resumo['saldo_npl']), help="Igual ao 'Saldo devedor' deste bloco — todo contrato em write-off (>360 dias) já está muito além do corte de 90 dias.")
     # c6.metric("Prazo médio (meses)", f"{resumo['prazo_medio_meses']:.1f}" if resumo["prazo_medio_meses"] is not None else "-",)
 
     # --- Book de renegociações ------------------------------------------------------
@@ -289,7 +297,7 @@ def _render_carteira_body():
     c1.metric("Taxa de default", _pct(default_fpd["taxa_default_contratos_pct"]), help="% de contratos marcados como em default no sistema de origem (flag bruto do banco).")
     c2.metric("First payment default", _pct(default_fpd["taxa_fpd_pct"]), help="% de contratos marcados pelo sistema de origem com a flag 'primeira parcela em atraso' (campo firstPaymentDefault) — vem pronto do banco, não é recalculado aqui.")
     c3.metric("Write-off (contratos)", _pct(writeoff["pct_contratos_com_baixa"]), help="% de contratos com alguma parcela sinalizada pelo flag bruto 'writeOff' do sistema de origem — população calculada de forma independente do corte de 360 dias, então pode divergir do indicador ao lado.")
-    c4.metric("Write-off (% saldo originado)", _pct(writeoff["pct_saldo_baixado_sobre_originado"]), help="% do valor originado que pertence a contratos com atraso ≥360 dias (corte padrão 'WO=360' do Painel) — critério diferente do flag bruto usado em 'Write-off (contratos)', os dois podem não bater.")
+    c4.metric("Write-off (% saldo originado)", _pct(writeoff["pct_saldo_baixado_sobre_originado"]), help="% do valor originado que pertence a contratos com atraso >360 dias (corte padrão 'WO=360' do Painel: write-off = atraso maior que 360) — critério diferente do flag bruto usado em 'Write-off (contratos)', os dois podem não bater.")
     c5.metric("Taxa de renegociados", _pct(pct_renegociado["pct_renegociado"]), help="% de contratos-raiz do recorte que já foram renegociados ao menos uma vez.")
 
     # --- Curva de maturação por safra (vintage) ----------------------------------
@@ -406,7 +414,7 @@ def _render_carteira_body():
         help="NPL 90+ (sobre o SALDO DEVEDOR, não o saldo total contratado — mesma metodologia do "
         "'NPL por faixa de atraso' acima, diferente da 'Inadimplência' do resto do Painel) "
         "segmentado por rating, estado (UF) e setor (CNAE) do cliente — só para contratos CCB, "
-        "cruzados com os dados cadastrais de client_data. Exclui write-off (atraso ≥360 dias), igual "
+        "cruzados com os dados cadastrais de client_data. Exclui write-off (atraso >360 dias), igual "
         "ao 'NPL por faixa de atraso' acima, para os dois números serem comparáveis.",
     )
     with st.expander("NPL 90+ por rating", expanded=False):

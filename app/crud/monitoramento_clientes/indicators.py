@@ -206,12 +206,12 @@ def aplicar_filtro_carteira(base, executivo_bruto, carteira):
     """Filtra os contratos monitorados por estado de carteira, reaproveitando
     a base já tratada (consolidação de renegociação + `quitado`/`max_delay`)
     da aba "Painel Executivo" (`crud/painel_executivo/data.py`) — a mesma
-    lógica e o mesmo corte de write-off (`WO` = 360 dias) usados lá, pra não
-    reimplementar (e não divergir de) como o resto do Painel decide o que é
-    "em aberto" ou "write-off".
+    lógica e o mesmo corte de write-off (`WO` = 360 dias; write-off = atraso
+    MAIOR que 360) usados lá, pra não reimplementar (e não divergir de) como
+    o resto do Painel decide o que é "em aberto" ou "write-off".
 
-    `carteira`: "Carteira em aberto" (não quitado e max_delay < WO),
-    "WriteOff" (max_delay >= WO) ou "Carteira total" (sem filtro — inclui
+    `carteira`: "Carteira em aberto" (não quitado e max_delay <= WO),
+    "WriteOff" (max_delay > WO) ou "Carteira total" (sem filtro — inclui
     também os já quitados).
 
     O cruzamento é feito por `operationCode_raiz` (não pelo `operationCode`
@@ -232,9 +232,9 @@ def aplicar_filtro_carteira(base, executivo_bruto, carteira):
     m = base.join(estado, on="operationCode_raiz", how="left")
 
     if carteira == "Carteira em aberto":
-        mask = (~m["quitado"].fillna(True)) & (m["max_delay"].fillna(WO) < WO)
+        mask = (~m["quitado"].fillna(True)) & (m["max_delay"].fillna(WO + 1) <= WO)
     elif carteira == "WriteOff":
-        mask = m["max_delay"].fillna(0) >= WO
+        mask = m["max_delay"].fillna(0) > WO
     else:
         mask = pd.Series(True, index=base.index)
 
@@ -276,7 +276,7 @@ def aplicar_subfiltro_tipo(base, subfiltro_ccb, subfiltro_cpr):
 
 def classificar_status_carteira(base, executivo_bruto):
     """Classifica cada contrato em "Carteira Inadimplente" (em aberto —
-    não quitado e sem atingir o corte de write-off, `max_delay < WO` — E
+    não quitado e sem ultrapassar o corte de write-off, `max_delay <= WO` — E
     com atraso, `max_delay > 0`) ou "Carteira Adimplente" (todo o
     restante: quitados, write-off, ou em aberto mas em dia). Reaproveita
     `quitado`/`max_delay` da base do Painel Executivo — mesma fonte e
@@ -285,7 +285,7 @@ def classificar_status_carteira(base, executivo_bruto):
     estado = estado[~estado.index.duplicated(keep="first")]
     m = base.join(estado, on="operationCode_raiz", how="left")
 
-    em_aberto = (~m["quitado"].fillna(True)) & (m["max_delay"].fillna(WO) < WO)
+    em_aberto = (~m["quitado"].fillna(True)) & (m["max_delay"].fillna(WO + 1) <= WO)
     inadimplente = em_aberto & (m["max_delay"].fillna(0) > 0)
 
     status = pd.Series("Carteira Adimplente", index=base.index)

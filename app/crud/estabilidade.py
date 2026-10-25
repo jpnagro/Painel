@@ -143,13 +143,15 @@ def _render_estabilidade_body():
                     st.success(f"Dados buscados com sucesso! {len(combined):,} deals no total.")
                 except Exception as exc:
                     st.error(f"Não foi possível buscar os dados do CRM: {exc}")
-                    st.stop()
+                    return
         else:
-            st.stop()
+            # `return` (e não st.stop()): st.stop() interrompe o script INTEIRO, o que
+            # impedia as abas seguintes do app de renderizar.
+            return
 
     if not CSV_PATH.exists():
         st.error(f"Arquivo não encontrado: {CSV_PATH}")
-        st.stop()
+        return
 
     df = load_deals(CSV_PATH)
 
@@ -157,13 +159,13 @@ def _render_estabilidade_body():
 
     if ref_total == 0:
         st.error(f"Nenhum deal encontrado para a safra de referência ({month_label(REFERENCE_PERIOD)}) no CSV.")
-        st.stop()
+        return
 
     available_months = sorted(p for p in df["Safra"].unique() if p >= pd.Period("2025-07", freq="M"))
 
     if not available_months:
         st.warning("Nenhuma safra a partir de Jul/25 encontrada no CSV.")
-        st.stop()
+        return
 
     with st.expander("Safra de referência — Jun/25", expanded=False):
         st.caption(

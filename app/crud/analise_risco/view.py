@@ -62,7 +62,7 @@ def _render_analise_risco_body():
         # --- Linha 1: Carteira -----------------------------------------------
         carteira_selecionada = st.radio(
             "Carteira", options=CARTEIRAS, index=0, horizontal=True, key="risco_filtro_carteira",
-            help="'Carteira em aberto': exclui quitados e write-off (atraso ≥360 dias). 'WriteOff': "
+            help="'Carteira em aberto': exclui quitados e write-off (atraso >360 dias). 'WriteOff': "
             "só os contratos em write-off. 'Carteira total': todos os contratos-raiz, sem excluir "
             "nada.",
         )
@@ -131,12 +131,12 @@ def _render_analise_risco_body():
 
     if not len(df):
         st.warning("Nenhum contrato nesse recorte de filtros.")
-        st.stop()
+        return
 
     df = filtrar_por_periodo(df, data_inicio=data_inicio, data_fim=data_fim)
     if not len(df):
         st.warning("Nenhum contrato originado nesse período.")
-        st.stop()
+        return
 
     st.caption(f"{len(df):,} contratos no recorte.")
 

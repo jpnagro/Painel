@@ -119,16 +119,35 @@ def relatorio_painel_executivo(produto="CCB", carteira="Carteira em aberto"):
     min_data = df_bruto["releaseDate"].min()
     hoje = pd.Timestamp.now().date()
 
-    r = load_indicadores_executivo(produto, carteira, min_data.date(), hoje)
+    # "CCB+CPR" = as duas carteiras juntas (divisão por produto, não por linha de crédito)
+    produtos = ("CCB", "CPR") if produto in ("CCB+CPR", "CCB + CPR", "ambos") else (produto,)
+    r = load_indicadores_executivo(produtos, carteira, min_data.date(), hoje)
     categorias = r["categorias"]
     vg, risco, fin = r["visao_geral"], r["risco"], r["financeiro"]
     return {
-        "produto": produto,
+        "produto": r["produto"],
         "carteira": carteira,
         "categorias": categorias,
         "n_total_contratos": r["n_total"],
         "n_ccb": r["n_ccb"],
         "n_cpr": r["n_cpr"],
+        # Seções reformuladas da aba (1. Visão Geral, 2. Distribuição por Produto,
+        # 3. Indicadores de Risco). NPL/faixas/evolução/PDD IGNORAM o filtro
+        # `carteira` (incluem write-off); ver documentacao_indicadores.md, seção 4.
+        "kpis_visao_geral_total": _df_index_to_dict(r["kpis"]["Total"]),
+        "kpis_visao_geral_por_categoria": {c: _df_index_to_dict(r["kpis"][c]) for c in categorias},
+        "npl_saldo_devedor": r["npl"],
+        # linhas por linha de crédito + subtotais "Total CCB"/"Total CPR" (se ambos) + "Total"
+        "npl_por_produto_e_linha": _df_index_to_dict(r["npl_tabela"]),
+        "linhas_de_credito": r["linhas"],
+        "fundos_disponiveis": r["fundos"],
+        "faixas_de_atraso": _df_index_to_dict(r["faixas_atraso"]),
+        "evolucao_npl90_mensal": r["evolucao_npl90"].to_dict(orient="records"),
+        # PDD pela régua de cada fundo (Ghia, Kanastra, Oikos; demais = Res. CMN 2.682)
+        "pdd_por_fundo": _df_index_to_dict(r["pdd"]["fundos"]),
+        "pdd_faixas_por_regua": {k: _df_index_to_dict(v) for k, v in r["pdd"]["faixas"].items()},
+        "pdd_total": round(r["pdd_total"], 2),
+        "pdd_pct_do_saldo_em_aberto": round(r["pdd_pct_saldo"], 2),
         "visao_geral_total": _df_index_to_dict(vg["Total"]),
         "risco_total": _df_index_to_dict(risco["Total"]),
         "financeiro_total": _df_index_to_dict(fin["Total"]),

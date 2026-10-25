@@ -48,7 +48,7 @@ def resumo_carteira_aberta(contratos_ativos, estado, parcelas_ativos, wo=360, np
     """Carteira em aberto (não quitada), EXCLUINDO contratos em write-off
     — esses são reportados à parte em `resumo_carteira_writeoff`."""
 
-    estado_n_pago = estado[~estado['quitado'] & (estado['max_delay'] < wo)].copy()
+    estado_n_pago = estado[~estado['quitado'] & (estado['max_delay'] <= wo)].copy()
     ops_em_aberto = set(estado_n_pago['operationCode'])
 
     contratos_ativos_n_pago = contratos_ativos[contratos_ativos['operationCode'].isin(ops_em_aberto)]
@@ -79,7 +79,7 @@ def resumo_carteira_writeoff(contratos_ativos, estado, parcelas_ativos, wo=360):
     contratos com alguma parcela em aberto marcada como baixada a
     prejuízo)."""
 
-    estado_writeoff = estado[estado['max_delay'] >= wo].copy()
+    estado_writeoff = estado[estado['max_delay'] > wo].copy()
     ops_writeoff = set(estado_writeoff['operationCode'])
 
     contratos_ativos_wo = contratos_ativos[contratos_ativos['operationCode'].isin(ops_writeoff)].copy()
@@ -119,7 +119,7 @@ def npl_por_faixa(estado, faixas=(15, 30, 60, 90), wo=360):
     faixa (metodologia padrão de mercado)."""
 
     base = estado[estado["saldo_atual"] > 0].copy()  # universo = carteira com saldo
-    base = base[base["max_delay"] < wo].copy()
+    base = base[base["max_delay"] <= wo].copy()  # write-off = atraso > wo (fica de fora)
     saldo_total = base["saldo_atual"].sum()
     n_total = len(base)
 
@@ -139,7 +139,7 @@ def npl_por_faixa(estado, faixas=(15, 30, 60, 90), wo=360):
 def distribuicao_aging(estado, wo=360):
 
     base = estado[estado["saldo_atual"] > 0].copy()
-    base = base[base["max_delay"] < wo].copy()
+    base = base[base["max_delay"] <= wo].copy()
     saldo_total = base["saldo_atual"].sum()
     g = base.groupby("bucket_atraso", observed=True).agg(
         n_contratos=("operationCode", "count"),
@@ -164,7 +164,7 @@ def taxa_default_fpd(contratos_ativos):
 def taxa_writeoff(contratos_originais, estado, wo=360):
 
     valor_originado = contratos_originais["totalLoan"].sum()
-    saldo_baixado = estado.loc[estado["max_delay"] >= wo, "saldo_a_receber"].sum()
+    saldo_baixado = estado.loc[estado["max_delay"] > wo, "saldo_a_receber"].sum()
     n_baixados = int(estado["writeoff"].sum())
 
     return pd.DataFrame([{
@@ -492,8 +492,8 @@ def perfil_risco_cliente(contratos_ativos, estado, client, wo=360):
     setor/CNAE, estado, restrições) para os contratos CCB, que têm chave
     exata com client_data (ccbCode = operationCode).
 
-    Usa o mesmo universo de `npl_por_faixa` (saldo_atual > 0 e max_delay <
-    wo) — sem esse segundo filtro, os contratos em write-off (max_delay >=
+    Usa o mesmo universo de `npl_por_faixa` (saldo_atual > 0 e max_delay <=
+    wo) — sem esse segundo filtro, os contratos em write-off (max_delay >
     360, sempre 100% NPL90+ por definição) entravam no numerador E no
     denominador de cada categoria, inflando o NPL90+ por Rating/UF/CNAE
     acima do NPL90+ geral, que exclui write-off por ser reportado à parte."""
@@ -501,7 +501,7 @@ def perfil_risco_cliente(contratos_ativos, estado, client, wo=360):
     com_cliente = juntar_client_data(contratos_ativos, client)
     com_cliente = com_cliente.merge(estado, on="operationCode", how="left")
     com_cliente = com_cliente[com_cliente["saldo_atual"] > 0]
-    com_cliente = com_cliente[com_cliente["max_delay"] < wo]
+    com_cliente = com_cliente[com_cliente["max_delay"] <= wo]
 
     def resumo_por(col):
         if com_cliente.empty:

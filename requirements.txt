@@ -15,3 +15,5 @@ openpyxl
 sqlalchemy
 uvicorn[standard]==0.52.1
 openai
+reportlab==5.1.0
+matplotlib==3.11.2
