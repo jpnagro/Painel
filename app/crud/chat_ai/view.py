@@ -76,7 +76,7 @@ def render_chat_ai():
             "A variável de ambiente `OPENAI_API_KEY` não foi encontrada. Configure-a no arquivo "
             "`.env` (local) ou nos Secrets do Streamlit Cloud para habilitar o Chat AI."
         )
-        st.stop()
+        return
 
     if CHAVE_HISTORICO not in st.session_state:
         st.session_state[CHAVE_HISTORICO] = []

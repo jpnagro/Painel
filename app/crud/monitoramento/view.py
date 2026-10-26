@@ -68,7 +68,7 @@ def _render_monitoramento_body():
         st.error(f"Erro ao carregar dados — {msg}")
 
     if not data_ok:
-        st.stop()
+        return
 
     ks_ref = ks_2samp(
         df_ref[df_ref["target"] == 0]["score_novo"],

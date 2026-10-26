@@ -68,7 +68,7 @@ entender a carteira de crédito, os indicadores do Painel, ou tirar dúvidas sob
 {", ".join(sorted(VARIAVEIS))}
 
 # Carteiras disponíveis (parâmetro `carteira`)
-"Carteira em aberto" (não quitados e sem atingir 360 dias de atraso), "WriteOff" (atraso >= 360 dias),
+"Carteira em aberto" (não quitados e sem ultrapassar 360 dias de atraso), "WriteOff" (atraso > 360 dias),
 "Carteira total" (sem filtro de estado).
 
 # Documentação oficial dos indicadores e gráficos do Painel (metodologia de cálculo)
@@ -109,13 +109,21 @@ TOOLS = [
         "type": "function",
         "name": "relatorio_painel_executivo",
         "description": (
-            "Indicadores completos da aba 'Painel Executivo' (visão geral, risco por faixa de "
-            "atraso e financeiro/PDD/margem) pra um Produto e uma Carteira, no Total e por categoria."
+            "Indicadores completos da aba 'Painel Executivo' pra um Produto e uma Carteira, no Total e "
+            "por categoria: 10 KPIs da Visão Geral (incl. NPL 90 e NPL 90 + WO), inadimplência por "
+            "faixa de atraso, faixas de atraso da carteira, NPL 90/30 com e sem write-off por "
+            "produto, evolução mensal do NPL 90 e PDD por fundo (régua de cada fundo: Ghia, Kanastra, Oikos e Res. CMN 2.682 nos demais). NPL, faixas, evolução e PDD "
+            "ignoram o filtro 'carteira' (sempre incluem write-off)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "produto": {"type": "string", "enum": ["CCB", "CPR"], "description": "Padrão: CCB."},
+                "produto": {
+                    "type": "string",
+                    "enum": ["CCB", "CPR", "CCB+CPR"],
+                    "description": "Padrão: CCB. 'CCB+CPR' = as duas carteiras juntas (a divisão "
+                    "por categoria passa a ser por produto: CCB x CPR).",
+                },
                 "carteira": {
                     "type": "string",
                     "enum": ["Carteira em aberto", "WriteOff", "Carteira total"],

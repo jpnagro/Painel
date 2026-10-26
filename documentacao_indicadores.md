@@ -2,7 +2,7 @@
 
 Este documento explica, aba por aba, o que cada indicador e gráfico do Painel mostra e **exatamente como ele é calculado**. O objetivo é dar transparência total sobre a metodologia por trás dos números — de onde vêm os dados, quais filtros afetam cada cálculo e qual fórmula está por trás de cada métrica.
 
-**Última atualização:** 27/08/2026
+**Última atualização:** 22/10/2026
 
 > **Nota para o Agente de IA (Chat AI):** este documento é a fonte primária de metodologia usada pelo
 > agente para responder perguntas sobre o Painel. Sempre que uma pergunta envolver "inadimplência" ou
@@ -45,9 +45,9 @@ Na prática, isso significa que:
 
 O corte oficial de write-off usado nas abas "Análise da Carteira", "Painel Executivo", "Análise de Risco" e "Monitoramento de Clientes" é:
 
-> **Write-off = contrato com atraso máximo (`max_delay`) igual ou superior a 360 dias em alguma parcela em aberto.**
+> **Write-off = contrato com atraso máximo (`max_delay`) MAIOR que 360 dias em alguma parcela em aberto (`max_delay > 360`).** Um contrato com exatamente 360 dias de atraso ainda NÃO é write-off — fica na carteira em aberto e entra no NPL.
 
-Esse critério (apelidado de `WO = 360` no código) é usado de forma consistente para separar "Carteira em aberto" de "WriteOff" nessas quatro abas. A única exceção documentada está na aba "Análise da Carteira", no indicador "Write-off (contratos)" das Taxas-chave (seção 3.4), que usa um flag bruto do banco (`writeOff`) em vez do corte de 360 dias.
+Esse critério (apelidado de `WO = 360` no código; write-off é `max_delay > WO`, carteira "viva" é `max_delay <= WO`) é usado de forma consistente para separar "Carteira em aberto" de "WriteOff" nessas quatro abas. A única exceção documentada está na aba "Análise da Carteira", no indicador "Write-off (contratos)" das Taxas-chave (seção 3.4), que usa um flag bruto do banco (`writeOff`) em vez do corte de 360 dias.
 
 ### 1.3 A fórmula canônica de "% da Carteira" (Inadimplência 90+ — denominador = saldo TOTAL)
 
@@ -67,13 +67,17 @@ O Painel usa **dois termos diferentes de propósito**, com **denominadores difer
 
 | | **NPL** | **Inadimplência / "% da Carteira"** |
 |---|---|---|
-| Onde aparece | Só na aba "Análise da Carteira": "NPL por faixa de atraso & Aging" (3.3) e "Perfil de risco do cliente" (3.9) | Painel Executivo (4.1, 4.3, 4.4) e toda a Análise de Risco (5.1, 5.2) |
+| Onde aparece | Aba "Análise da Carteira": "NPL por faixa de atraso & Aging" (3.3) e "Perfil de risco do cliente" (3.9); e, no Painel Executivo, os KPIs "NPL 90" / "NPL 90 + WO" (4.1) e a seção "Inadimplência — NPL 90 e NPL 30" e a evolução do NPL 90 (4.3, itens 4 e 5) | Painel Executivo: gráfico e tabela "Indicadores de Risco" (4.3, itens 1 e 2); e toda a Análise de Risco (5.1, 5.2) |
 | Denominador | **Saldo devedor** do grupo — só o que ainda falta pagar hoje (`saldo_atual`) | **Saldo total contratado** do grupo — soma de TODAS as parcelas, pagas e em aberto (`total_installment_amount`) |
 | Numerador | Saldo devedor dos contratos ruins (mesmo campo do denominador, `saldo_atual`) | Saldo em aberto (parcelas não pagas) dos contratos ruins (`total_due_amount`) |
 | Efeito prático | Cresce à medida que o contrato bom vai sendo pago (o saldo devedor total encolhe, então a mesma dívida ruim pesa proporcionalmente mais) | Não varia só por causa de pagamentos em dia de outros contratos, porque o denominador é o total contratado, fixo desde a originação |
-| População | Sempre exclui write-off (`max_delay < 360`) | Depende do filtro "Carteira" da aba (pode incluir write-off se "Carteira total" ou "WriteOff" estiver selecionado) |
+| População | "NPL" / "NPL 30/90" (sem WO) sempre exclui write-off (só entra `max_delay <= 360`); as variantes "c/ WO" / "+ WO" do Painel Executivo incluem o write-off no numerador e no denominador | Depende do filtro "Carteira" da aba (pode incluir write-off se "Carteira total" ou "WriteOff" estiver selecionado) |
 
 **Regra prática para responder perguntas do usuário**: se a pergunta cita "NPL" ou vem no contexto da aba "Análise da Carteira" (por rating/UF/CNAE/faixa de atraso), use a ferramenta/dado de NPL (saldo devedor). Se a pergunta cita "inadimplência" de forma genérica, ou vem no contexto de Painel Executivo/Análise de Risco/Simulador, use a fórmula canônica "% da Carteira" (saldo total). Se não estiver claro qual o usuário quer, prefira responder com a "Inadimplência" canônica (é a mais usada no Painel) e deixe explícito na resposta qual fórmula foi usada e por quê.
+
+### 1.6 Produto CPR excluído de todo o Painel: "Antecipação Recebiveis"
+
+O tipo de produto CPR **"Antecipação Recebiveis"** (`cpr.productType`) é usado no sistema de origem como produto de "estacionamento" — contrato que não deve contar em indicador nenhum. Por isso ele é **excluído de todo o Painel** (Análise da Carteira, Painel Executivo, Análise de Risco e os filtros de tipo de produto CPR do Monitoramento de Clientes): os contratos desse tipo e as parcelas deles saem da base antes de qualquer cálculo (saldo, atraso, NPL, PDD, faixas de atraso, concedido, etc.), e ele não aparece mais como opção de categoria/filtro. A consolidação das renegociações é resolvida sobre todos os contratos antes da exclusão, então as demais cadeias não são afetadas. Os outros tipos de CPR (AgCred, Giro Agro, Farm Equity...) continuam normalmente.
 
 ---
 
@@ -187,8 +191,8 @@ Esta é a aba com a visão mais granular da carteira de crédito, cobrindo compo
 Os três primeiros blocos da tela mostram o mesmo conjunto de 6 indicadores (Nº de contratos, Valor originado, Valor total das parcelas, Valor pago, Saldo devedor e Saldo em NPL 90+), mas aplicados a três recortes diferentes da carteira:
 
 - **Carteira total**: todos os contratos-raiz do filtro selecionado, sem excluir nada (inclui contratos já quitados e contratos em write-off).
-- **Carteira em aberto**: exclui tanto os contratos já 100% quitados quanto os que estão em write-off (atraso ≥ 360 dias) — é a carteira "viva" e ainda não baixada.
-- **Carteira em WriteOff**: apenas os contratos com atraso ≥ 360 dias em alguma parcela.
+- **Carteira em aberto**: exclui tanto os contratos já 100% quitados quanto os que estão em write-off (atraso > 360 dias) — é a carteira "viva" e ainda não baixada.
+- **Carteira em WriteOff**: apenas os contratos com atraso > 360 dias em alguma parcela.
 
 > **Atenção**: "Carteira total" **não** é igual à soma de "Em aberto" + "WriteOff", porque "Total" também inclui os contratos já quitados, que não entram em nenhum dos outros dois recortes.
 
@@ -232,10 +236,10 @@ Duas visões complementares do risco, ambas calculadas sobre a carteira em abert
 | **Taxa de default** | % de contratos com a flag bruta `default = true` no sistema de origem — vem pronta do banco, não é recalculada pelo Painel |
 | **First payment default (FPD)** | % de contratos com a flag bruta `firstPaymentDefault = true` (1ª parcela em atraso) no sistema de origem — também vem pronta do banco, não é recalculada aqui |
 | **Write-off (contratos)** | % de contratos com alguma parcela sinalizada pelo flag bruto `writeOff` do sistema de origem (ver nota abaixo) |
-| **Write-off (% saldo originado)** | (soma do saldo a receber dos contratos com atraso ≥ 360 dias) ÷ (valor total originado do recorte) — usa o corte padrão `WO=360` da seção 1.2 |
+| **Write-off (% saldo originado)** | (soma do saldo a receber dos contratos com atraso > 360 dias) ÷ (valor total originado do recorte) — usa o corte padrão `WO=360` da seção 1.2 |
 | **Taxa de renegociados** | % de contratos-raiz que já foram renegociados |
 
-> **Nota técnica importante**: "Write-off (contratos)" e "Write-off (% saldo originado)" usam **populações calculadas de forma independente** — a primeira depende só do flag bruto `writeOff` marcado pelo sistema de origem; a segunda depende só do atraso (`max_delay ≥ 360`). Um contrato pode estar em uma população e não na outra (ex.: marcado `writeOff=true` manualmente mas com atraso ainda abaixo de 360 dias, ou vice-versa) — os dois percentuais **podem não bater** e isso não é um erro, são critérios diferentes de "write-off" coexistindo neste bloco.
+> **Nota técnica importante**: "Write-off (contratos)" e "Write-off (% saldo originado)" usam **populações calculadas de forma independente** — a primeira depende só do flag bruto `writeOff` marcado pelo sistema de origem; a segunda depende só do atraso (`max_delay > 360`). Um contrato pode estar em uma população e não na outra (ex.: marcado `writeOff=true` manualmente mas com atraso ainda de 360 dias ou menos, ou vice-versa) — os dois percentuais **podem não bater** e isso não é um erro, são critérios diferentes de "write-off" coexistindo neste bloco.
 
 ### 3.5 📅 Curva de maturação por safra
 
@@ -281,7 +285,7 @@ Mede o quanto a carteira depende de poucos clientes grandes, usando o Índice He
 
 ### 3.9 🧑‍💼 Perfil de risco do cliente (CCB)
 
-Mostra o **NPL 90+** (sobre o saldo devedor — mesma metodologia da seção 3.3, não confundir com a "Inadimplência" de saldo total da seção 1.5) segmentado por três dimensões do cliente: **rating**, **estado (UF)** e **setor de atividade (CNAE)**. Só cobre contratos CCB (que têm chave exata com os dados cadastrais); a base combina os contratos com `client_data` e **exclui write-off** (`max_delay < 360`), para ficar comparável ao "NPL por faixa de atraso" da seção 3.3.
+Mostra o **NPL 90+** (sobre o saldo devedor — mesma metodologia da seção 3.3, não confundir com a "Inadimplência" de saldo total da seção 1.5) segmentado por três dimensões do cliente: **rating**, **estado (UF)** e **setor de atividade (CNAE)**. Só cobre contratos CCB (que têm chave exata com os dados cadastrais); a base combina os contratos com `client_data` e **exclui write-off** (só entra `max_delay <= 360`), para ficar comparável ao "NPL por faixa de atraso" da seção 3.3.
 
 > **% NPL90+ por categoria = (saldo devedor dos contratos daquela categoria com atraso ≥ 90 dias) ÷ (saldo devedor total da categoria, sem write-off) × 100**
 
@@ -293,48 +297,73 @@ Fecha com um bloco de **Restrições cadastrais**, mostrando o percentual de cli
 
 ## 4. Painel Executivo
 
-Uma visão consolidada e executiva da carteira, com indicadores de negócio, risco e financeiros, filtrável por **Produto** (CCB ou CPR, um por vez), **Carteira** (Em aberto / WriteOff / Total) e **Período** (Início/Fim, pela data de originação). Sempre que o Produto é CCB, os contratos são segmentados em "App" e "Crédito Produtor"; quando é CPR, são segmentados pelos tipos de produto CPR cadastrados no sistema (essa lista se atualiza automaticamente se surgir um novo tipo).
+Uma visão consolidada e executiva da carteira, com indicadores de negócio, risco e financeiros, filtrável por **Produto** (seleção múltipla: CCB, CPR ou os dois juntos), **Carteira** (Em aberto / WriteOff / Total) e **Período** (Início/Fim, pela data de originação). A segmentação "por categoria" (as linhas/colunas abaixo do Total em todos os indicadores, tabelas e gráficos) depende do Produto escolhido: com **só CCB**, os contratos são segmentados em "App" e "Crédito Produtor" (linhas de crédito); com **só CPR**, pelos tipos de produto CPR cadastrados no sistema (essa lista se atualiza automaticamente se surgir um novo tipo); com **CCB e CPR juntos**, a segmentação passa a ser **por produto** ("CCB" e "CPR"), não por linha de crédito — por exemplo, abaixo do "Total Concedido" aparecem os valores de CCB e de CPR. Sempre que este documento fala em "categoria" na seção 4, leia: App/Crédito Produtor (só CCB), tipos de CPR (só CPR) ou CCB/CPR (os dois).
 
-### 4.1 Tópico 1 — Painel Executivo (KPIs principais)
+**Estrutura atual da aba** (reformulada): `1. Visão Geral da Carteira` → `2. Distribuição por Produto` → `3. Indicadores de Risco`. A antiga seção "Análise por Safra" e a tabela "Indicadores Financeiros" **foram removidas da tela** (os indicadores financeiros, como a PDD de 50%, continuam existindo apenas no Simulador da Análise de Risco — seção 5.2).
 
-| KPI | Fórmula |
-|---|---|
-| **Total Concedido** | Soma do valor de principal dos contratos originais do recorte (nunca conta renegociação como novo dinheiro concedido) |
-| **Contratos Ativos** | Contagem de contratos que ainda não foram 100% quitados |
-| **Taxa Juros Média** | Taxa de juros mensal contratada, ponderada pelo valor de principal de cada contrato |
-| **Ticket Médio** | Média simples do valor de principal por contrato |
-| **FPD (90d)** | Fórmula canônica de "% da Carteira" (seção 1.3 — denominador = saldo TOTAL contratado), aplicada ao corte de primeira parcela em atraso |
-| **Inadimplência 90d** | Fórmula canônica de "% da Carteira" (seção 1.3 — denominador = saldo TOTAL contratado), no corte de 90 dias — é o mesmo número, calculado da mesma forma, que aparece em toda a Análise de Risco. **Não confundir com o "NPL 90+" da aba "Análise da Carteira"** (seção 1.5), que usa o saldo devedor como denominador — os dois podem ter valores diferentes para o mesmo recorte de dados |
-| **Cobertura PDD** | Ver seção 4.3 |
-| **Margem Financeira Estimada** | Ver seção 4.3 |
+**Quais filtros afetam o quê**: o filtro **Produto** e o **Período** valem para a aba inteira. O filtro **Carteira** (Em aberto / WriteOff / Total) afeta só os indicadores de volume das seções 1 e 2 e a tabela/gráfico de "Indicadores de Risco" (inadimplência canônica); **NPL 90, NPL 90 + WO e toda a parte nova da seção 3 (faixas de atraso, NPL 90/30, evolução do NPL 90, PDD) ignoram o filtro Carteira** e sempre usam a carteira completa do Produto escolhido (em aberto + write-off), porque precisam do write-off dentro da base.
 
-**Gráficos deste tópico**:
-- Dois gráficos de rosca (donut) comparando categorias (App x Crédito Produtor, ou os tipos de CPR): um para valor total a receber, outro para número de contratos ativos.
-- Um gráfico de barras "Indicadores de Risco por Carteira (%)", mostrando o percentual da carteira em cada faixa de atraso (FPD, 15+, 30+, 60+, 90+ dias), comparando o Total com cada categoria.
+**Download em PDF**: o botão "📄 Download", logo abaixo dos filtros, gera um relatório em PDF sob demanda (só quando clicado, com uma barra de progresso, com a % concluída, abaixo do botão, que permanece na tela). Ao terminar, aparece o botão "⬇️ Baixar PDF", que baixa o arquivo com um clique; ele some se algum filtro ou seleção mudar, pois o arquivo ficaria desatualizado. (O navegador só inicia um download a partir de um clique do usuário, por isso são dois botões.) (A4 paisagem, em português e formato numérico brasileiro) com os resultados **atuais** do painel, para diretoria e investidores: capa com os parâmetros (Produto, Carteira, Período e as seleções de linha de crédito/tipo de NPL da evolução e de fundo do PDD), seções 1 a 3 completas (cards, gráficos e tabelas, inclusive o detalhe por faixa de cada régua da PDD) e uma página de Notas Metodológicas. Os números são os mesmos da tela; só mudam o formato (1.234,56) e o fato de os gráficos serem desenhados com matplotlib. Código em `app/crud/painel_executivo/pdf_report.py`; depende de `reportlab` e `matplotlib` (no `requirements.txt`).
 
-### 4.2 Tópico 2 — Composição da Carteira
+### 4.1 Tópico 1 — Visão Geral da Carteira (10 KPIs)
 
-Uma tabela com 10 indicadores de composição (total de contratos, clientes únicos, valor emprestado, valor a receber, valor pago, taxa de juros média, ticket médio, contratos ativos, novos contratos no último mês e valor desses novos contratos), exibidos para o Total e para cada categoria (App/Crédito Produtor ou tipos de CPR), lado a lado.
+Cada KPI mostra o valor Total em destaque e, logo abaixo, o valor de cada categoria (App/Crédito Produtor no CCB; tipos de produto no CPR).
 
-### 4.3 Tópico 3 — Indicadores de Risco e Financeiros
+| KPI | Fórmula | Campos |
+|---|---|---|
+| **Total Concedido** | Soma do valor de principal dos contratos originais do recorte (nunca conta renegociação como novo dinheiro concedido) | `principalAmount` |
+| **Qtd Contratos Ativos** | Contagem de contratos-raiz que ainda não foram 100% quitados (têm ao menos uma parcela em aberto) | `installments.paid` |
+| **Qtd Contratos Total** | Nº de contratos-raiz do recorte, ativos e quitados (renegociações ficam dentro do contrato-raiz) | `operationCode` |
+| **Taxa Juros Média** | Taxa de juros mensal contratada, ponderada pelo valor de principal de cada contrato | `monthlyRate`, `principalAmount` |
+| **Ticket Médio** | Total Concedido ÷ nº de contratos (média simples do principal por contrato) | `principalAmount` |
+| **Total Concedido da Carteira Ativa** | Soma do principal (`principalAmount` da parcela) só das parcelas ainda **em aberto** dos contratos ativos — a parte de principal do que falta receber, sem juros. É o mesmo conjunto de parcelas do "Saldo da Carteira Ativa", contando só o principal; **Saldo − Total Concedido da Carteira Ativa = juros a receber**. (Não é o valor originalmente concedido dos contratos ativos: a parte já amortizada fica de fora.) | `installments.principalAmount`, `installments.paid` |
+| **Saldo da Carteira Ativa** | Soma do valor cheio (`amount`: principal + juros) das parcelas ainda em aberto dos contratos ativos — o que falta receber, vencido e a vencer. É o "saldo devedor" usado como base do NPL | `installments.amount`, `installments.paid` |
+| **Total Recebido** | Soma do valor efetivamente pago das parcelas já pagas dos contratos do recorte (principal + juros recebidos até hoje) | `installments.paidAmount`, `installments.paid` |
+| **NPL 90** | **Saldo devedor** dos contratos com atraso de 90 a 360 dias ÷ saldo devedor total da carteira **sem** write-off (atraso ≤ 360). Nível de contrato: se o maior atraso do contrato é ≥ 90 dias, o saldo em aberto inteiro dele entra no numerador. Mesma fórmula do "NPL por faixa de atraso" da aba Análise da Carteira (seção 3.3); **ignora o filtro Carteira** | `installments.amount`, `installments.delay`, `installments.paid` |
+| **NPL 90 + WO** | Igual ao NPL 90, mas o saldo em write-off (atraso > 360) entra no numerador **e** no denominador: (saldo com atraso de 90 a 360 dias + saldo em write-off) ÷ saldo devedor total incluindo write-off; **ignora o filtro Carteira** | `installments.amount`, `installments.delay` |
 
-**Indicadores de Risco**: tabela com as faixas de atraso (FPD 90d, 15+, 30+, 60+, 90+ dias), mostrando o saldo em atraso em reais e o percentual da carteira (fórmula canônica da seção 1.3 — saldo em aberto ÷ saldo TOTAL contratado; é "Inadimplência", não "NPL") para cada faixa, no Total e por categoria.
+> **Atenção (NPL x Inadimplência)**: o NPL 90 e o NPL 90 + WO deste painel seguem a regra de NPL da seção 1.5 (denominador = **saldo devedor**). Já a "Inadimplência / % da Carteira" (denominador = saldo TOTAL contratado, seção 1.3) continua existindo na seção 3, no gráfico e na tabela "Indicadores de Risco". As duas coexistem na mesma aba — não são o mesmo número.
 
-**Indicadores Financeiros**:
+**Gráficos deste tópico**: quatro gráficos de rosca (donut) lado a lado, comparando categorias (linhas de crédito, ou CCB x CPR quando os dois produtos estão selecionados): **Total Recebido** (mesmo valor do card, por categoria); **Divisão de Contratos Ativos**; **Saldo da Carteira Ativa** (idem); e **Total Concedido da Carteira Ativa** (idem). Todos obedecem ao filtro Carteira.
 
-| Indicador | Fórmula |
-|---|---|
-| **Total de Juros (Contratada)** | Soma dos juros previstos em contrato |
-| **Juros Pagos** | Parte de juros efetivamente recebida dentro do que já foi pago |
-| **% Juros Pagos** | Juros pagos ÷ juros contratados |
-| **Saldo Devedor** | Soma do saldo de principal ainda em aberto |
-| **Inadimplência 90+ Esperada** | Saldo de principal em aberto dos contratos com atraso ≥ 90 dias (diferente da "Inadimplência 90d" do risco, que usa o valor cheio das parcelas — aqui usa-se só o principal, para fins de provisionamento) |
-| **PDD** (Provisão para Devedores Duvidosos) | 50% do valor de "Inadimplência 90+ Esperada" — uma provisão fixa sobre o saldo de principal em risco |
-| **Margem Financeira Bruta (Estimada)** | Juros pagos menos a provisão (PDD) |
+### 4.2 Tópico 2 — Distribuição por Produto
 
-### 4.4 Tópico 4 — Análise por Safra
+Uma tabela com **os mesmos 10 indicadores da seção 4.1** (mesmas fórmulas), exibidos lado a lado para o Total e para cada categoria de produto (App/Crédito Produtor no CCB; tipos de produto no CPR). Contratos sem categoria (ex.: CCB sem cadastro em `client_data`) entram só no Total.
 
-Para cada mês de originação, mostra: quantidade de contratos, volume concedido, saldo devedor, perda real aos 90 dias (baseada no saldo de principal efetivamente em atraso), perda esperada (saldo de principal dos contratos em atraso ≥ 90 dias) e as respectivas taxas de inadimplência real e esperada em percentual do volume da safra. Visualizado como um gráfico combinado (barras de perda em reais + linhas de inadimplência em percentual), com uma aba por categoria.
+Com **CCB e CPR selecionados juntos**, a tabela mantém as colunas **Total**, **Valor CCB** e **Valor CPR** (divisão por produto) e **acrescenta uma coluna para cada linha de crédito** (App, Crédito Produtor e os tipos de CPR) — ou seja, as mesmas colunas que apareceriam se o usuário escolhesse "CCB" e "CPR" separadamente, lado a lado.
+
+### 4.3 Tópico 3 — Indicadores de Risco
+
+Respeita Produto e Período; ignora Carteira (exceto no gráfico e na tabela "Indicadores de Risco" logo abaixo, que seguem o filtro). Composto, na ordem da tela, por:
+
+1. **Gráfico "Indicadores de Risco por Carteira (%)"**: barras com o % da carteira em cada faixa de atraso (FPD, 15+, 30+, 60+, 90+ dias), comparando o Total com cada categoria. Fórmula canônica da seção 1.3 (saldo em aberto ÷ saldo TOTAL contratado) — é "Inadimplência", não "NPL". *(Segue o filtro Carteira.)*
+
+2. **Tabela "Indicadores de Risco"**: as mesmas faixas (FPD 90d, 15+, 30+, 60+, 90+), com o saldo em atraso em R$ e o % da carteira (fórmula canônica da 1.3), no Total e por categoria. *(Segue o filtro Carteira.)*
+
+3. **Faixas de atraso** (gráfico + tabela): toda a carteira com saldo em aberto (inclui write-off) distribuída pela faixa do **maior atraso do contrato** — se o contrato tem parcelas com atrasos diferentes, o contrato inteiro cai na faixa da pior. Faixas: `00 - A vencer` (atraso 0), `01 - 1 a 7 dias`, `02 - 8 a 15`, `03 - 16 a 30`, `04 - 31 a 60`, `05 - 61 a 90`, `06 - 91 a 180`, `07 - 181 a 360`, `08 - 361 a 720`, `09 - Acima de 720 dias` (as faixas 08 e 09 são write-off, atraso > 360 — igual ao resto do Painel; a faixa 07, até 360 dias inclusive, ainda é carteira viva). Colunas da tabela: **Principal** (soma do `principalAmount` das parcelas em aberto), **Amount** (soma do `amount` — valor cheio — das parcelas em aberto), **Princ. de cada produto** (Principal separado por categoria: App, Crédito Produtor, ou tipos de CPR; "Sem categoria" se houver), **Qtde** (nº de contratos) e **%** (Principal da faixa ÷ Principal total). O gráfico é de barras empilhadas por faixa, com o Amount dividido por produto. Campos: `installments.amount`, `principalAmount`, `paid`, `delay`.
+
+4. **Inadimplência — NPL 90 e NPL 30**: quatro cards (NPL 90, NPL 30, NPL 90 c/ WO, NPL 30 c/ WO) e uma tabela por linha de crédito. **É NPL na definição da seção 1.5 (denominador = saldo devedor).** Fórmulas, em nível de contrato: `NPL N` (sem WO) = saldo com atraso de N a 360 dias ÷ saldo devedor sem write-off (atraso ≤ 360); `NPL N c/ WO` = (saldo com atraso de N a 360 dias + saldo em write-off) ÷ saldo devedor total incluindo write-off. A tabela tem uma linha para **cada linha de crédito dos produtos selecionados** (App, Crédito Produtor, tipos de CPR; "Sem categoria" se houver), os subtotais **Total CCB** e **Total CPR** (quando os dois produtos estão selecionados) e o **Total** geral. Colunas: **Saldo (amount)** (inclui write-off), **Atraso 30-360d**, **Atraso 90-360d**, **WO > 360d** (saldos em R$), **NPL 30**, **NPL 90**, **NPL 30 c/ WO**, **NPL 90 c/ WO** (%). A linha Total do NPL 90 é o mesmo número do KPI "NPL 90" da seção 4.1.
+
+5. **Evolução do NPL 90 — desde Jan/25**: gráfico de linhas com o NPL 90 **sem WO** e **c/ WO** no fim de cada mês desde janeiro/2025 (mesma fórmula do item 4, aplicada ao saldo em aberto e ao atraso máximo de cada contrato naquela data). O histórico é reconstruído de `installments.dueDate`, `paymentDate` e `paid`, considerando a vigência das renegociações (mesma reconstrução usada na curva de maturação da Análise da Carteira); o último ponto é o dia de hoje e usa os valores atuais — bate exatamente com o KPI "NPL 90" e com o card do item 4. Dois filtros multiselect definem as linhas do gráfico: **Linha de crédito** ("Total" = o recorte inteiro dos produtos selecionados, mais as linhas de crédito dos produtos selecionados; default "Total") e **Tipo de NPL** ("NPL 90 s/ WO" e/ou "NPL 90 c/ WO"; default os dois). Cada combinação linha de crédito × tipo vira uma linha do gráfico — por exemplo, App + Crédito Produtor × os dois tipos = 4 linhas. Com várias linhas, a cor identifica a linha de crédito e o traço (cheio = s/ WO, tracejado = c/ WO) identifica o tipo; os rótulos de valor só aparecem com até 2 linhas (use o hover nas demais).
+
+6. **PDD (por fundo)**: provisão calculada com a **régua de cada fundo**, conforme a aba "Regras PDD" da planilha "PDD por Rating" (22/10/2026). O fundo de um contrato é o `portfolio` da sua última parcela (seção do filtro Fundo, abaixo) e define a régua e a **unidade em que o maior atraso é medido**. Em todas, o % da faixa vale para **todo o saldo em aberto** (`amount` das parcelas não pagas, inclusive vincendas) da unidade, e Provisão = Saldo × % PDD. Contrato sem `taxId` conta como devedor próprio.
+
+   | Régua | Fundos | Unidade do maior atraso | Faixas (maior atraso em dias → % PDD) |
+   |---|---|---|---|
+   | **Ghia** | Ghia | Devedor (`taxId`), considerando só os contratos dele **na Ghia** | 0 → 1,15% · 1–15 → 1,15% · 16–30 → 1,15% · 31–60 → 1,15% · 61–90 → 54,10% · 91–120 → 59,25% · 121–150 → 69,71% · 151–180 → 86,16% · 181–210 → 92,81% · 211–240 → 97,58% · 241–270 → 97,72% · 271–300 → 97,72% · 301–330 → 98,84% · >330 → 100% |
+   | **Kanastra** | Kanastra | Cliente (`taxId`), considerando **toda a CCB, de todos os fundos** (e não só o Kanastra) | até 14 → 0% · 15–30 → 15% · 31–45 → 22,5% · 46–60 → 30% · 61–75 → 60% · >75 → 100% |
+   | **Oikos** | Oikos e Oikos Warehouse | Contrato | até 60 → 0% · 61–90 → 15% · 91–120 → 25,83% · 121–150 → 50,83% · 151–180 → 75,83% · ≥181 → 100% |
+   | **Res. CMN 2.682** | Todos os demais (Liqi, Tesouraria, Nagro, Leaf, Rivool, CRA etc., e "Sem fundo") | Contrato | AA 0 → 0% · A 1–30 → 0,5% · B 31–60 → 1% · C 61–90 → 3% · D 91–120 → 10% · E 121–180 → 30% · F 181–240 → 50% · G 241–360 → 70% · H >360 → 100% |
+
+   A PDD de cada contrato é calculada sobre a **base completa** (todos os produtos e fundos, no período escolhido) — por isso o atraso do devedor na Ghia e o do cliente na CCB (Kanastra) não dependem dos filtros de Produto e Fundo da tela; esses filtros apenas escolhem quais contratos entram na soma. (Para um contrato CPR do Kanastra, vale o maior entre o atraso do próprio contrato e o do cliente na CCB.)
+
+   **Apresentação**: uma tabela **por fundo** (Régua, Contratos, Saldo, % PDD, Provisão, mais a linha Total), o card "PDD total" com o % do saldo em aberto, e abas com o **detalhe por faixa** de cada régua presente na seleção (Contratos, Devedores, Saldo, % PDD, Provisão).
+
+   **Filtro Fundo** (multiselect, só nesta PDD; default = todos): escolhe quais fundos entram; os valores são **somados** (Oikos + Ghia = uma tabela só). O **fundo** de um contrato é o `portfolio` da sua **última parcela** (a de maior vencimento; empate → maior `installmentNumber`; a parcela sintética nº 25 do CCB é ignorada), sem agrupar nomes no filtro (Oikos e Oikos Warehouse aparecem separados, mas usam a mesma régua); contrato sem portfolio vira "Sem fundo". Como `portfolio` é atributo da parcela e cerca de 8% dos contratos têm parcelas em mais de um portfolio, essa regra dá um único fundo a cada contrato, de modo que a soma dos fundos fecha o total. Campo: `installments.portfolio`.
+
+   **Conferência com a planilha**: as quatro réguas, com os limites de faixa acima, reproduzem exatamente o "% PDD" e a PDD total (R$ 101,46 mi) de todos os 4.176 contratos da aba "Detalhe contratos". Diferenças esperadas em relação aos números da planilha: o Painel exclui o produto CPR "Antecipação Recebiveis" (a planilha tem 1 contrato dele) e atribui um único fundo por contrato (a planilha, na aba "Resumo", conta contratos com parcelas em mais de um fundo nos dois).
+
+> **Observação sobre a PDD**: a PDD do Painel Executivo usa as réguas por fundo acima (Ghia, Kanastra, Oikos e Res. CMN 2.682). A regra antiga de "50% do saldo de principal dos contratos com atraso ≥ 90 dias" **não aparece mais no Painel Executivo**; ela só é usada nos indicadores financeiros do Simulador da Análise de Risco (seção 5.2).
 
 ---
 
@@ -382,7 +411,7 @@ O Simulador responde à pergunta: **"o que aconteceria com a carteira se decidí
 
 **Como funciona**: o usuário escolhe um ou dois critérios de exclusão (cada um é uma variável + os valores a excluir, por exemplo "UF = RN"), e opcionalmente combina os dois critérios com lógica "E" (só exclui quem bate as duas condições ao mesmo tempo) ou "OU" (exclui quem bate qualquer uma das duas). Isso divide a carteira filtrada em dois grupos: o **segmento excluído** e a **carteira simulada** (tudo, exceto o segmento).
 
-Os indicadores comparativos usam exatamente as mesmas fórmulas do Painel Executivo (seções 4.1 a 4.3), calculadas três vezes — uma para a carteira **Atual** (com o segmento), uma para a carteira **Simulada** (sem o segmento) e uma só para o **Segmento** excluído:
+Os indicadores comparativos usam as fórmulas de inadimplência canônica e os indicadores financeiros do Simulador (incluindo a PDD de 50% do saldo de principal com atraso ≥ 90 dias, que não existe mais no Painel Executivo — veja a observação da seção 4.3), calculadas três vezes — uma para a carteira **Atual** (com o segmento), uma para a carteira **Simulada** (sem o segmento) e uma só para o **Segmento** excluído:
 
 - Total Concedido, Contratos Ativos, Ticket Médio, Taxa Juros Média
 - FPD (90d), Inadimplência 90d, Cobertura PDD, Margem Financeira Estimada
@@ -459,10 +488,10 @@ Permite selecionar um cliente/contrato específico e visualizar toda a sua traje
 | Termo | Significado |
 |---|---|
 | **Raiz / contrato raiz** | O contrato original de onde partiu a relação de crédito, antes de qualquer renegociação. Renegociações são sempre remapeadas para a raiz nos cálculos. |
-| **Write-off (WO = 360)** | Contrato com atraso de 360 dias ou mais em alguma parcela — considerado baixado a prejuízo na maior parte dos cálculos do Painel. Atenção: o indicador "Write-off (contratos)" da Análise da Carteira usa um flag bruto (`writeOff`) independente desse corte de 360 dias — ver seção 3.4. |
+| **Write-off (WO = 360)** | Contrato com atraso MAIOR que 360 dias em alguma parcela (`max_delay > 360`) — considerado baixado a prejuízo na maior parte dos cálculos do Painel. Atenção: o indicador "Write-off (contratos)" da Análise da Carteira usa um flag bruto (`writeOff`) independente desse corte de 360 dias — ver seção 3.4. |
 | **NPL (Non-Performing Loan)** | Termo usado SÓ na aba "Análise da Carteira" (seções 3.3 e 3.9): contrato em atraso além de um corte de dias (15, 30, 60 ou 90), calculado sobre o **saldo devedor** (não sobre o saldo total contratado). Um contrato inteiro entra no NPL de uma faixa se qualquer parcela em aberto atingir aquele atraso. Ver a distinção completa com "Inadimplência" na seção 1.5 — **não é sinônimo de "% da Carteira"**. |
 | **Inadimplência / "% da Carteira"** | Termo usado no Painel Executivo e em toda a Análise de Risco: saldo das parcelas em aberto de contratos com atraso ≥ 90 dias (ou outro corte), dividido pelo **saldo TOTAL contratado** (pago + em aberto) do recorte — denominador diferente do NPL. Ver seção 1.3 (fórmula) e 1.5 (comparação lado a lado com o NPL). |
-| **PDD** | Provisão para Devedores Duvidosos — no Painel Executivo, calculada como 50% do saldo de PRINCIPAL (não o valor cheio da parcela) em contratos com atraso ≥ 90 dias. Ver seção 4.3. |
+| **PDD** | Provisão para Devedores Duvidosos. No Painel Executivo: régua de cada fundo (Ghia, Kanastra, Oikos; Res. CMN 2.682 nos demais) aplicada sobre todo o saldo em aberto (seção 4.3, item 6). No Simulador da Análise de Risco: 50% do saldo de PRINCIPAL (não o valor cheio da parcela) em contratos com atraso ≥ 90 dias (seção 5.2). |
 | **Safra** | Grupo de contratos originados no mesmo mês, usado para acompanhar a maturação da inadimplência ao longo do tempo de vida do contrato. Na "Curva de maturação por safra" (3.5), o percentual de cada célula usa como denominador o valor originado da safra (fixo) — um terceiro tipo de base, diferente do NPL e da Inadimplência canônica. |
 | **HHI** | Índice Herfindahl-Hirschman — mede a concentração da carteira em poucos clientes grandes, agrupando por CPF/CNPJ (`taxId`). Na Análise da Carteira (3.8), a base inclui contratos em write-off (usa `saldo_atual > 0`, não o recorte "Carteira em aberto"). |
 | **PSI (Population Stability Index)** | Mede o quanto uma distribuição (de score ou de rating) se deslocou em relação a uma base de referência. Existem duas versões no Painel — ver seção 2 para a diferença entre elas. |
