@@ -43,3 +43,4 @@ with tab_monitoramento_clientes:
 
 with tab_chat_ai:
     render_chat_ai()
+

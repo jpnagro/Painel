@@ -1,0 +1,14 @@
+# fora da imagem: ambiente local, segredos, git e lixo de execução
+venv/
+.venv/
+.git/
+.claude/
+.env
+**/__pycache__/
+**/*.pyc
+*.ipynb
+hubspot_deals_credito_simplificado.csv
+app/hubspot_deals_credito_simplificado.csv
+README.md
+INDICA~1.PY
+LOGO AZUL.png

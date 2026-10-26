@@ -6,7 +6,7 @@ import streamlit as st
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import create_engine
 
-from crud.carteira.data import _bool_true
+from crud.carteira.data import _bool_true, url_pg_com_driver
 
 load_dotenv(find_dotenv(raise_error_if_not_found=False))
 
@@ -14,7 +14,7 @@ URL_PG = getenv("URL_PG")
 
 
 def get_engine():
-    return create_engine(URL_PG)
+    return create_engine(url_pg_com_driver(URL_PG))
 
 
 # ---------------------------------------------------------------------------
