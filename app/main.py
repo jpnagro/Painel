@@ -22,24 +22,24 @@ st.set_page_config(page_title="Painel Nagro — Crédito", layout="wide")
     "🤖 Chat AI",
 ])
 
-# with tab_monitoramento:
-#     sub_relatorio, sub_estabilidade = st.tabs(["Relatório", "Estabilidade Rating"])
-#     with sub_relatorio:
-#         render_monitoramento()
-#     with sub_estabilidade:
-#         render_estabilidade()
+with tab_monitoramento:
+    sub_relatorio, sub_estabilidade = st.tabs(["Relatório", "Estabilidade Rating"])
+    with sub_relatorio:
+        render_monitoramento()
+    with sub_estabilidade:
+        render_estabilidade()
 
-# with tab_carteira:
-#     render_carteira()
+with tab_carteira:
+    render_carteira()
 
 with tab_executivo:
     render_painel_executivo()
 
-# with tab_analise_risco:
-#     render_analise_risco()
+with tab_analise_risco:
+    render_analise_risco()
 
-# with tab_monitoramento_clientes:
-#     render_monitoramento_clientes()
+with tab_monitoramento_clientes:
+    render_monitoramento_clientes()
 
-# with tab_chat_ai:
-#     render_chat_ai()
+with tab_chat_ai:
+    render_chat_ai()
