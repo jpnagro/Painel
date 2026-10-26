@@ -1,3 +1,4 @@
+from importlib.util import find_spec
 from os import getenv
 
 import numpy as np
@@ -13,8 +14,28 @@ URL_PG = getenv("URL_PG")
 # ---------------------------------------------------------------------------
 # 1. CONEXÃO E EXTRAÇÃO
 # ---------------------------------------------------------------------------
+def url_pg_com_driver(url):
+    """Garante, na URL de conexão, um driver PostgreSQL que esteja INSTALADO.
+
+    O SQLAlchemy mais novo pode escolher o driver `psycopg` (v3) quando a URL
+    é só `postgresql://` -- e, se esse pacote não está instalado, a conexão
+    quebra com ModuleNotFoundError (foi o que aconteceu no deploy). Aqui uma
+    URL sem driver explícito passa a usar `psycopg2` (ou `psycopg`, se for o
+    único instalado); uma URL com `+psycopg` sem o pacote cai para `psycopg2`.
+    Uma URL que já especifica outro driver é mantida."""
+    if not url:
+        return url
+    instalados = [d for d in ("psycopg2", "psycopg") if find_spec(d)]
+    for prefixo in ("postgresql://", "postgres://"):
+        if url.startswith(prefixo):
+            return f"postgresql+{instalados[0]}://" + url[len(prefixo):] if instalados else url
+    if url.startswith("postgresql+psycopg://") and "psycopg" not in instalados and instalados:
+        return "postgresql+psycopg2://" + url[len("postgresql+psycopg://"):]
+    return url
+
+
 def get_engine():
-    return create_engine(URL_PG)
+    return create_engine(url_pg_com_driver(URL_PG))
 
 
 def carregar_dados(engine):
